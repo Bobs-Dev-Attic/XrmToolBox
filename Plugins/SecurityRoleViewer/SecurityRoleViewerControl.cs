@@ -241,10 +241,10 @@ namespace SecurityRoleViewer
                     e.CellStyle.ForeColor = Color.Blue;
                     break;
                 case "Business Unit":
-                    e.CellStyle.ForeColor = Color.DarkGoldenrod;
+                    e.CellStyle.ForeColor = Color.Goldenrod;
                     break;
                 case "User":
-                    e.CellStyle.ForeColor = Color.OrangeRed;
+                    e.CellStyle.ForeColor = Color.Orange;
                     break;
                 case "None":
                     e.CellStyle.ForeColor = Color.Gray;

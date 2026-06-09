@@ -69,9 +69,10 @@ namespace SecurityRoleViewer.Services
 
                 if (otcValue != null)
                 {
-                    objectTypeCode = Convert.ToInt32(otcValue);
                     entityName = otcValue.ToString();
-                    category = objectTypeCode < 10000 ? "Core Entities" : "Custom Entities";
+                    // Custom entities have a publisher prefix with underscore
+                    category = entityName.Contains("_") ? "Custom Entities" : "Core Entities";
+                    objectTypeCode = entityName.Contains("_") ? 10000 : 1;
                 }
 
                 int depth = 0;
@@ -92,7 +93,7 @@ namespace SecurityRoleViewer.Services
             }
 
             privileges = privileges
-                .Where(p => p.ObjectTypeCode != 0 || p.Category == "Miscellaneous")
+                .Where(p => !string.IsNullOrEmpty(p.EntityName) || p.Category == "Miscellaneous")
                 .OrderBy(p => p.Category)
                 .ThenBy(p => p.EntityName)
                 .ThenBy(p => p.PrivilegeName)
