@@ -1,13 +1,13 @@
-using OfficeOpenXml;
-using OfficeOpenXml.Style;
 using SecurityRoleViewer.Models;
 using System.Collections.Generic;
-using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text;
 
 namespace SecurityRoleViewer.Export
 {
+    // Generates an Excel XML Spreadsheet 2003 (.xls) file — no external dependencies.
+    // Excel opens these natively; the first open may prompt a format-confirmation dialog.
     public static class ExcelExporter
     {
         private static readonly string[] PrivilegeTypes =
@@ -15,77 +15,106 @@ namespace SecurityRoleViewer.Export
 
         public static void Export(string filePath, List<RolePrivilegeInfo> privileges)
         {
-            using (var package = new ExcelPackage())
-            {
-                var byRole = privileges
-                    .Where(p => !string.IsNullOrEmpty(p.EntityName))
-                    .GroupBy(p => p.RoleName)
-                    .OrderBy(g => g.Key);
+            var sb = new StringBuilder();
+            sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+            sb.AppendLine("<?mso-application progid=\"Excel.Sheet\"?>");
+            sb.AppendLine("<Workbook xmlns=\"urn:schemas-microsoft-com:office:spreadsheet\"");
+            sb.AppendLine("  xmlns:o=\"urn:schemas-microsoft-com:office:office\"");
+            sb.AppendLine("  xmlns:x=\"urn:schemas-microsoft-com:office:excel\"");
+            sb.AppendLine("  xmlns:ss=\"urn:schemas-microsoft-com:office:spreadsheet\">");
 
-                foreach (var roleGroup in byRole)
-                    WriteSheet(package.Workbook.Worksheets.Add(SanitizeSheetName(roleGroup.Key)), roleGroup.ToList());
+            AppendStyles(sb);
 
-                package.SaveAs(new FileInfo(filePath));
-            }
+            var byRole = privileges
+                .Where(p => !string.IsNullOrEmpty(p.EntityName))
+                .GroupBy(p => p.RoleName)
+                .OrderBy(g => g.Key);
+
+            foreach (var roleGroup in byRole)
+                AppendWorksheet(sb, roleGroup.Key, roleGroup.ToList());
+
+            sb.AppendLine("</Workbook>");
+
+            File.WriteAllText(filePath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
         }
 
-        private static void WriteSheet(ExcelWorksheet ws, List<RolePrivilegeInfo> privileges)
+        private static void AppendStyles(StringBuilder sb)
         {
-            ws.Cells[1, 1].Value = "Entity";
-            for (int c = 0; c < PrivilegeTypes.Length; c++)
-                ws.Cells[1, c + 2].Value = PrivilegeTypes[c] == "AppendTo" ? "Append To" : PrivilegeTypes[c];
+            sb.AppendLine("  <Styles>");
+            sb.AppendLine("    <Style ss:ID=\"Default\" ss:Name=\"Normal\"/>");
+            // s1 = header: blue bg, white bold text, centered
+            AppendStyle(sb, "s1", "#4472C4", "#FFFFFF", bold: true);
+            // s2-s5 = access levels matching the in-app pie colours
+            AppendStyle(sb, "s2", "#EDA200", "#000000", bold: false); // User - amber
+            AppendStyle(sb, "s3", "#F0C700", "#000000", bold: false); // Business Unit - gold
+            AppendStyle(sb, "s4", "#4CAF50", "#FFFFFF", bold: false); // Parent-Child BU - green
+            AppendStyle(sb, "s5", "#2E9B32", "#FFFFFF", bold: false); // Organization - dark green
+            sb.AppendLine("  </Styles>");
+        }
 
-            using (var hdr = ws.Cells[1, 1, 1, PrivilegeTypes.Length + 1])
-            {
-                hdr.Style.Font.Bold = true;
-                hdr.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                hdr.Style.Fill.BackgroundColor.SetColor(Color.FromArgb(68, 114, 196));
-                hdr.Style.Font.Color.SetColor(Color.White);
-                hdr.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-            }
+        private static void AppendStyle(StringBuilder sb, string id, string bgColor, string fontColor, bool bold)
+        {
+            sb.AppendLine($"    <Style ss:ID=\"{id}\">");
+            sb.AppendLine("      <Alignment ss:Horizontal=\"Center\"/>");
+            sb.Append($"      <Font ss:FontName=\"Calibri\" ss:Color=\"{fontColor}\"");
+            if (bold) sb.Append(" ss:Bold=\"1\"");
+            sb.AppendLine("/>");
+            sb.AppendLine($"      <Interior ss:Color=\"{bgColor}\" ss:Pattern=\"Solid\"/>");
+            sb.AppendLine("    </Style>");
+        }
 
-            ws.View.FreezePanes(2, 2);
+        private static void AppendWorksheet(StringBuilder sb, string roleName, List<RolePrivilegeInfo> privileges)
+        {
+            sb.AppendLine($"  <Worksheet ss:Name=\"{X(SanitizeSheetName(roleName))}\">");
+            sb.AppendLine("    <Table>");
+            sb.AppendLine("      <Column ss:Width=\"160\"/>");
+            for (int i = 0; i < PrivilegeTypes.Length; i++)
+                sb.AppendLine("      <Column ss:Width=\"90\"/>");
 
-            int row = 2;
+            // Header row
+            sb.AppendLine("      <Row>");
+            Cell(sb, "Entity", "s1");
+            foreach (var pt in PrivilegeTypes)
+                Cell(sb, pt == "AppendTo" ? "Append To" : pt, "s1");
+            sb.AppendLine("      </Row>");
+
+            // Data rows
             foreach (var entityGroup in privileges.GroupBy(p => p.EntityName).OrderBy(g => g.Key))
             {
-                ws.Cells[row, 1].Value = entityGroup.Key;
-
                 var byType = entityGroup
                     .GroupBy(p => p.PrivilegeType)
                     .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.Depth).First().Depth);
 
-                for (int c = 0; c < PrivilegeTypes.Length; c++)
+                sb.AppendLine("      <Row>");
+                Cell(sb, entityGroup.Key, null);
+                foreach (var pt in PrivilegeTypes)
                 {
-                    int depth = byType.TryGetValue(PrivilegeTypes[c], out var d) ? d : 0;
-                    var cell = ws.Cells[row, c + 2];
-                    cell.Value = DepthLabel(depth);
-                    cell.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                    ApplyCellColor(cell, depth);
+                    int depth = byType.TryGetValue(pt, out var d) ? d : 0;
+                    Cell(sb, DepthLabel(depth), DepthStyle(depth));
                 }
-
-                row++;
+                sb.AppendLine("      </Row>");
             }
 
-            ws.Cells.AutoFitColumns();
-            if (ws.Column(1).Width < 20) ws.Column(1).Width = 20;
+            sb.AppendLine("    </Table>");
+
+            // Freeze first row
+            sb.AppendLine("    <WorksheetOptions xmlns=\"urn:schemas-microsoft-com:office:excel\">");
+            sb.AppendLine("      <FreezePanes/><FrozenNoSplit/>");
+            sb.AppendLine("      <SplitHorizontal>1</SplitHorizontal>");
+            sb.AppendLine("      <TopRowBottomPane>1</TopRowBottomPane>");
+            sb.AppendLine("      <ActivePane>2</ActivePane>");
+            sb.AppendLine("    </WorksheetOptions>");
+
+            sb.AppendLine("  </Worksheet>");
         }
 
-        private static void ApplyCellColor(ExcelRange cell, int depth)
+        private static void Cell(StringBuilder sb, string value, string styleId)
         {
-            Color bg;
-            Color fg;
-            switch (depth)
-            {
-                case 1: bg = Color.FromArgb(237, 162, 0);  fg = Color.Black; break; // User - amber
-                case 2: bg = Color.FromArgb(240, 199, 0);  fg = Color.Black; break; // Business Unit - gold
-                case 4: bg = Color.FromArgb(76, 175, 80);  fg = Color.White; break; // Parent-Child BU - green
-                case 8: bg = Color.FromArgb(46, 155, 50);  fg = Color.White; break; // Organization - dark green
-                default: return;                                                      // None - no fill
-            }
-            cell.Style.Fill.PatternType = ExcelFillStyle.Solid;
-            cell.Style.Fill.BackgroundColor.SetColor(bg);
-            cell.Style.Font.Color.SetColor(fg);
+            var s = styleId != null ? $" ss:StyleID=\"{styleId}\"" : "";
+            if (string.IsNullOrEmpty(value))
+                sb.AppendLine($"        <Cell{s}/>");
+            else
+                sb.AppendLine($"        <Cell{s}><Data ss:Type=\"String\">{X(value)}</Data></Cell>");
         }
 
         private static string DepthLabel(int depth)
@@ -98,6 +127,28 @@ namespace SecurityRoleViewer.Export
                 case 8: return "Organization";
                 default: return "";
             }
+        }
+
+        private static string DepthStyle(int depth)
+        {
+            switch (depth)
+            {
+                case 1: return "s2";
+                case 2: return "s3";
+                case 4: return "s4";
+                case 8: return "s5";
+                default: return null;
+            }
+        }
+
+        private static string X(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value
+                .Replace("&", "&amp;")
+                .Replace("<", "&lt;")
+                .Replace(">", "&gt;")
+                .Replace("\"", "&quot;");
         }
 
         private static string SanitizeSheetName(string name)
