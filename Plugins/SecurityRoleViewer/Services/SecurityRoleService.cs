@@ -100,6 +100,8 @@ namespace SecurityRoleViewer.Services
 
             privileges = privileges
                 .Where(p => !string.IsNullOrEmpty(p.EntityName) || p.Category == "Miscellaneous")
+                .GroupBy(p => new { p.EntityName, p.PrivilegeType })
+                .Select(g => g.OrderByDescending(p => p.Depth).First())
                 .OrderBy(p => p.Category)
                 .ThenBy(p => p.EntityName)
                 .ThenBy(p => p.PrivilegeName)

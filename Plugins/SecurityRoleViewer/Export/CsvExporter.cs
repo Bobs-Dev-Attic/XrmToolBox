@@ -24,7 +24,9 @@ namespace SecurityRoleViewer.Export
 
             foreach (var group in grouped)
             {
-                var privsByType = group.ToDictionary(p => p.PrivilegeType, p => p.AccessLevelLabel);
+                var privsByType = group
+                    .GroupBy(p => p.PrivilegeType)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.Depth).First().AccessLevelLabel);
 
                 sb.Append($"\"{Escape(group.Key.RoleName)}\",\"{Escape(group.Key.EntityName)}\"");
                 foreach (var pt in PrivilegeTypes)
