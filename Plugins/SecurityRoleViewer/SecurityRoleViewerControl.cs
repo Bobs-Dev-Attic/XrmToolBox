@@ -39,6 +39,18 @@ namespace SecurityRoleViewer
         private readonly ToolStripMenuItem[] _columnMenuItems
             = new ToolStripMenuItem[PrivilegeColumns.Length];
 
+        // Entity column shows display names by default; the toolbar toggle flips
+        // this to show logical names instead (the other name moves to the tooltip).
+        private bool _showLogicalNames;
+
+        // Guards the ListView ItemChecked handler while we repopulate the list, so
+        // restoring checkboxes during a rebuild doesn't trigger privilege loads.
+        private bool _suppressItemCheck;
+
+        // Roles are grouped into these categories, shown in this order; empty
+        // categories are hidden. See CategorizeRole for the assignment rule.
+        private static readonly string[] CategoryOrder = { "Custom", "System", "Core", "Misc" };
+
         public SecurityRoleViewerControl()
         {
             InitializeComponent();
@@ -175,38 +187,97 @@ namespace SecurityRoleViewer
             });
         }
 
+        // Assigns a role to a category. First match wins:
+        //   Core   - backed by a role template (built-in baseline roles)
+        //   System - managed (shipped by a solution)
+        //   Custom - unmanaged (created/customized in this org)
+        //   Misc   - flags unreadable (defensive fallback)
+        private static string CategorizeRole(Entity role)
+        {
+            if (role.GetAttributeValue<EntityReference>("roletemplateid") != null)
+                return "Core";
+
+            if (role.Contains("ismanaged") && role["ismanaged"] is bool managed)
+                return managed ? "System" : "Custom";
+
+            return "Misc";
+        }
+
         private void PopulateRoleList()
         {
-            clbRoles.Items.Clear();
             var searchText = tstSearch.Text?.Trim() ?? "";
+
+            // Bucket matching roles by category first, so we can emit groups in the
+            // configured order and skip the empty ones.
+            var buckets = CategoryOrder.ToDictionary(c => c, c => new List<ListViewItem>());
 
             foreach (var role in _allRoles)
             {
                 var roleName = role.GetAttributeValue<string>("name") ?? "";
-                var roleId = role.GetAttributeValue<Guid>("roleid");
-                var buRef = role.GetAttributeValue<EntityReference>("businessunitid");
-                var buName = buRef?.Name ?? "";
 
                 if (!string.IsNullOrEmpty(searchText)
                     && roleName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
 
-                var displayName = string.IsNullOrEmpty(buName)
-                    ? roleName
-                    : $"{roleName} ({buName})";
+                var roleId = role.GetAttributeValue<Guid>("roleid");
+                var buName = role.GetAttributeValue<EntityReference>("businessunitid")?.Name ?? "";
+                var label = string.IsNullOrEmpty(buName) ? roleName : $"{roleName} ({buName})";
 
-                var item = new RoleListItem(roleId, roleName, displayName);
-                bool wasChecked = _loadedPrivileges.ContainsKey(roleId);
-                clbRoles.Items.Add(item, wasChecked);
+                var item = new ListViewItem(label)
+                {
+                    Tag = new RoleListItem(roleId, roleName, label),
+                    Checked = _loadedPrivileges.ContainsKey(roleId)
+                };
+                buckets[CategorizeRole(role)].Add(item);
             }
+
+            _suppressItemCheck = true;
+            lvRoles.BeginUpdate();
+            lvRoles.Items.Clear();
+            lvRoles.Groups.Clear();
+
+            foreach (var category in CategoryOrder)
+            {
+                var items = buckets[category];
+                if (items.Count == 0)
+                    continue;
+
+                var group = new ListViewGroup(category, $"{category} ({items.Count})");
+                lvRoles.Groups.Add(group);
+                foreach (var item in items)
+                {
+                    item.Group = group;
+                    lvRoles.Items.Add(item);
+                }
+            }
+
+            ResizeRoleColumn();
+            lvRoles.EndUpdate();
+            _suppressItemCheck = false;
+
+            // Add the native collapse/expand chevrons once the groups exist.
+            NativeMethods.MakeGroupsCollapsible(lvRoles);
         }
 
-        private void clbRoles_ItemCheck(object sender, ItemCheckEventArgs e)
+        private void ResizeRoleColumn()
         {
-            var item = clbRoles.Items[e.Index] as RoleListItem;
+            if (lvRoles.Columns.Count > 0)
+                lvRoles.Columns[0].Width = Math.Max(60, lvRoles.ClientSize.Width - 4);
+        }
+
+        private void lvRoles_Resize(object sender, EventArgs e)
+        {
+            ResizeRoleColumn();
+        }
+
+        private void lvRoles_ItemChecked(object sender, ItemCheckedEventArgs e)
+        {
+            if (_suppressItemCheck) return;
+
+            var item = e.Item.Tag as RoleListItem;
             if (item == null) return;
 
-            if (e.NewValue == CheckState.Checked)
+            if (e.Item.Checked)
             {
                 if (!_loadedPrivileges.ContainsKey(item.RoleId))
                 {
@@ -266,14 +337,11 @@ namespace SecurityRoleViewer
             tabRoles.TabPages.Clear();
 
             var checkedRoleIds = new List<Guid>();
-            for (int i = 0; i < clbRoles.Items.Count; i++)
+            foreach (ListViewItem lvItem in lvRoles.CheckedItems)
             {
-                if (clbRoles.GetItemChecked(i))
-                {
-                    var item = clbRoles.Items[i] as RoleListItem;
-                    if (item != null && _loadedPrivileges.ContainsKey(item.RoleId))
-                        checkedRoleIds.Add(item.RoleId);
-                }
+                var item = lvItem.Tag as RoleListItem;
+                if (item != null && _loadedPrivileges.ContainsKey(item.RoleId))
+                    checkedRoleIds.Add(item.RoleId);
             }
 
             if (checkedRoleIds.Count == 0)
@@ -442,9 +510,18 @@ namespace SecurityRoleViewer
             {
                 var row = new DataGridViewRow();
                 row.CreateCells(grid);
-                row.Cells[0].Value = entityRow.DisplayName;
-                // Hovering the entity name reveals its logical name.
-                row.Cells[0].ToolTipText = "Logical name: " + entityRow.EntityName;
+                // The toggle decides which name fills the cell; the other one moves
+                // to the tooltip so both are always reachable.
+                if (_showLogicalNames)
+                {
+                    row.Cells[0].Value = entityRow.EntityName;
+                    row.Cells[0].ToolTipText = "Display name: " + entityRow.DisplayName;
+                }
+                else
+                {
+                    row.Cells[0].Value = entityRow.DisplayName;
+                    row.Cells[0].ToolTipText = "Logical name: " + entityRow.EntityName;
+                }
 
                 for (int k = 0; k < columnMap.Count; k++)
                     row.Cells[k + 1].Value = entityRow.Depths[columnMap[k]];
@@ -526,17 +603,20 @@ namespace SecurityRoleViewer
                 RebuildMatrixPanel();
         }
 
+        private void tsbEntityLabel_Click(object sender, EventArgs e)
+        {
+            _showLogicalNames = tsbEntityLabel.Checked;
+            RebuildMatrixPanel();
+        }
+
         private List<RolePrivilegeInfo> CollectCheckedPrivileges()
         {
             var all = new List<RolePrivilegeInfo>();
-            for (int i = 0; i < clbRoles.Items.Count; i++)
+            foreach (ListViewItem lvItem in lvRoles.CheckedItems)
             {
-                if (clbRoles.GetItemChecked(i))
-                {
-                    var item = clbRoles.Items[i] as RoleListItem;
-                    if (item != null && _loadedPrivileges.ContainsKey(item.RoleId))
-                        all.AddRange(_loadedPrivileges[item.RoleId]);
-                }
+                var item = lvItem.Tag as RoleListItem;
+                if (item != null && _loadedPrivileges.ContainsKey(item.RoleId))
+                    all.AddRange(_loadedPrivileges[item.RoleId]);
             }
             return all;
         }

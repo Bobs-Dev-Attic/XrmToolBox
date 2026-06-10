@@ -31,8 +31,11 @@ namespace SecurityRoleViewer
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.tsddLevels = new System.Windows.Forms.ToolStripDropDownButton();
             this.tsddColumns = new System.Windows.Forms.ToolStripDropDownButton();
+            this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
+            this.tsbEntityLabel = new System.Windows.Forms.ToolStripButton();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
-            this.clbRoles = new System.Windows.Forms.CheckedListBox();
+            this.lvRoles = new System.Windows.Forms.ListView();
+            this.colRole = new System.Windows.Forms.ColumnHeader();
             this.tabRoles = new System.Windows.Forms.TabControl();
             this.lblEmpty = new System.Windows.Forms.Label();
 
@@ -100,7 +103,9 @@ namespace SecurityRoleViewer
                 this.tstEntitySearch,
                 this.toolStripSeparator3,
                 this.tsddLevels,
-                this.tsddColumns
+                this.tsddColumns,
+                this.toolStripSeparator4,
+                this.tsbEntityLabel
             });
             this.tsFilters.Dock = System.Windows.Forms.DockStyle.Top;
             this.tsFilters.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
@@ -133,6 +138,14 @@ namespace SecurityRoleViewer
             this.tsddColumns.Text = "Levels";
             this.tsddColumns.ShowDropDownArrow = true;
 
+            // tsbEntityLabel
+            this.tsbEntityLabel.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.tsbEntityLabel.Name = "tsbEntityLabel";
+            this.tsbEntityLabel.Text = "Logical Names";
+            this.tsbEntityLabel.CheckOnClick = true;
+            this.tsbEntityLabel.ToolTipText = "Show entity logical names instead of display names";
+            this.tsbEntityLabel.Click += new System.EventHandler(this.tsbEntityLabel_Click);
+
             // splitContainer1
             this.splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.splitContainer1.Location = new System.Drawing.Point(0, 25);
@@ -140,13 +153,26 @@ namespace SecurityRoleViewer
             this.splitContainer1.Panel1MinSize = 120;
             this.splitContainer1.SplitterDistance = 180;
 
-            // clbRoles (Panel1)
-            this.clbRoles.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.clbRoles.Name = "clbRoles";
-            this.clbRoles.CheckOnClick = true;
-            this.clbRoles.IntegralHeight = false;
-            this.clbRoles.ItemCheck += new System.Windows.Forms.ItemCheckEventHandler(this.clbRoles_ItemCheck);
-            this.splitContainer1.Panel1.Controls.Add(this.clbRoles);
+            // lvRoles (Panel1)
+            this.lvRoles.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.lvRoles.Name = "lvRoles";
+            this.lvRoles.CheckBoxes = true;
+            this.lvRoles.View = System.Windows.Forms.View.Details;
+            this.lvRoles.HeaderStyle = System.Windows.Forms.ColumnHeaderStyle.None;
+            this.lvRoles.FullRowSelect = true;
+            this.lvRoles.MultiSelect = false;
+            this.lvRoles.HideSelection = false;
+            this.lvRoles.ShowGroups = true;
+            this.lvRoles.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+                this.colRole
+            });
+            this.lvRoles.ItemChecked += new System.Windows.Forms.ItemCheckedEventHandler(this.lvRoles_ItemChecked);
+            this.lvRoles.Resize += new System.EventHandler(this.lvRoles_Resize);
+            this.splitContainer1.Panel1.Controls.Add(this.lvRoles);
+
+            // colRole
+            this.colRole.Text = "Role";
+            this.colRole.Width = 160;
 
             // tabRoles (Panel2)
             this.tabRoles.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -199,8 +225,11 @@ namespace SecurityRoleViewer
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
         private System.Windows.Forms.ToolStripDropDownButton tsddLevels;
         private System.Windows.Forms.ToolStripDropDownButton tsddColumns;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator4;
+        private System.Windows.Forms.ToolStripButton tsbEntityLabel;
         private System.Windows.Forms.SplitContainer splitContainer1;
-        private System.Windows.Forms.CheckedListBox clbRoles;
+        private System.Windows.Forms.ListView lvRoles;
+        private System.Windows.Forms.ColumnHeader colRole;
         private System.Windows.Forms.TabControl tabRoles;
         private System.Windows.Forms.Label lblEmpty;
     }

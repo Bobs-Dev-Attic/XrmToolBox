@@ -30,7 +30,7 @@ namespace SecurityRoleViewer.Services
         {
             var query = new QueryExpression("role")
             {
-                ColumnSet = new ColumnSet("name", "roleid", "businessunitid"),
+                ColumnSet = new ColumnSet("name", "roleid", "businessunitid", "ismanaged", "roletemplateid"),
                 Orders = { new OrderExpression("name", OrderType.Ascending) }
             };
 
