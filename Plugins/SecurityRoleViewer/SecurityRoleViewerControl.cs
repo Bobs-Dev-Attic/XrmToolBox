@@ -32,6 +32,8 @@ namespace SecurityRoleViewer
         private List<Entity> _allRoles;
         private readonly Dictionary<Guid, List<RolePrivilegeInfo>> _loadedPrivileges
             = new Dictionary<Guid, List<RolePrivilegeInfo>>();
+        private Dictionary<string, string> _entityDisplayNames;
+        private bool _showDisplayNames;
         private readonly Dictionary<int, ToolStripMenuItem> _levelMenuItems
             = new Dictionary<int, ToolStripMenuItem>();
         private readonly ToolStripMenuItem[] _columnMenuItems
@@ -92,6 +94,12 @@ namespace SecurityRoleViewer
         private static string ColumnLabel(string privilegeType)
             => privilegeType == "AppendTo" ? "Append To" : privilegeType;
 
+        private string GetEntityLabel(string logicalName)
+        {
+            if (!_showDisplayNames || _entityDisplayNames == null) return logicalName;
+            return _entityDisplayNames.TryGetValue(logicalName, out var display) ? display : logicalName;
+        }
+
         private HashSet<int> GetVisibleDepths()
         {
             var set = new HashSet<int>();
@@ -141,6 +149,10 @@ namespace SecurityRoleViewer
                     }
 
                     _allRoles = (List<Entity>)args.Result;
+                    _entityDisplayNames = null;
+                    _showDisplayNames = false;
+                    tsbDisplayNames.Checked = false;
+                    tsbDisplayNames.Enabled = true;
                     PopulateRoleList();
                     tsbExport.Enabled = false;
                     RebuildMatrixPanel();
@@ -307,11 +319,13 @@ namespace SecurityRoleViewer
             var entityGroups = privileges
                 .Where(p => !string.IsNullOrEmpty(p.EntityName))
                 .GroupBy(p => p.EntityName)
-                .OrderBy(g => g.Key);
+                .OrderBy(g => GetEntityLabel(g.Key));
 
             foreach (var group in entityGroups)
             {
+                var label = GetEntityLabel(group.Key);
                 if (keyword.Length > 0
+                    && label.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0
                     && group.Key.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
 
@@ -327,7 +341,6 @@ namespace SecurityRoleViewer
                     if (visibleDepths.Contains(depth))
                     {
                         depths[c] = depth;
-                        // A row is kept only if it has a visible cell in a visible column.
                         if (visibleColumns[c])
                             anyVisible = true;
                     }
@@ -340,7 +353,7 @@ namespace SecurityRoleViewer
                 if (!anyVisible)
                     continue;
 
-                rows.Add(new EntityRow { EntityName = group.Key, Depths = depths });
+                rows.Add(new EntityRow { EntityName = label, Depths = depths });
             }
 
             return rows;
@@ -369,7 +382,7 @@ namespace SecurityRoleViewer
                 HeaderText = "Entity",
                 Name = "colEntity",
                 Width = 180,
-                SortMode = DataGridViewColumnSortMode.NotSortable
+                SortMode = DataGridViewColumnSortMode.Automatic
             };
             grid.Columns.Add(entityCol);
 
@@ -386,7 +399,7 @@ namespace SecurityRoleViewer
                     HeaderText = ColumnLabel(PrivilegeColumns[c]),
                     Name = "col" + PrivilegeColumns[c],
                     Width = 65,
-                    SortMode = DataGridViewColumnSortMode.NotSortable,
+                    SortMode = DataGridViewColumnSortMode.Automatic,
                     DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter }
                 };
                 grid.Columns.Add(col);
@@ -477,6 +490,36 @@ namespace SecurityRoleViewer
         {
             if (_allRoles != null)
                 RebuildMatrixPanel();
+        }
+
+        private void tsbDisplayNames_Click(object sender, EventArgs e)
+        {
+            if (tsbDisplayNames.Checked && _entityDisplayNames == null)
+            {
+                tsbDisplayNames.Enabled = false;
+                WorkAsync(new WorkAsyncInfo
+                {
+                    Message = "Loading entity display names...",
+                    Work = (w, args) => args.Result = _roleService.GetEntityDisplayNames(),
+                    PostWorkCallBack = args =>
+                    {
+                        tsbDisplayNames.Enabled = true;
+                        if (args.Error != null)
+                        {
+                            tsbDisplayNames.Checked = false;
+                            ShowErrorDialog(args.Error, "Loading Display Names");
+                            return;
+                        }
+                        _entityDisplayNames = (Dictionary<string, string>)args.Result;
+                        _showDisplayNames = true;
+                        RebuildMatrixPanel();
+                    }
+                });
+                return;
+            }
+
+            _showDisplayNames = tsbDisplayNames.Checked;
+            RebuildMatrixPanel();
         }
 
         private List<RolePrivilegeInfo> CollectCheckedPrivileges()

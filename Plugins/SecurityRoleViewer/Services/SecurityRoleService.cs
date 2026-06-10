@@ -1,4 +1,6 @@
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 using SecurityRoleViewer.Models;
 using System;
@@ -142,6 +144,22 @@ namespace SecurityRoleViewer.Services
             if (lower.StartsWith("prvshare")) return "Share";
 
             return "Other";
+        }
+
+        public Dictionary<string, string> GetEntityDisplayNames()
+        {
+            var request = new RetrieveAllEntitiesRequest
+            {
+                EntityFilters = EntityFilters.Entity,
+                RetrieveAsIfPublished = false
+            };
+            var response = (RetrieveAllEntitiesResponse)_service.Execute(request);
+            return response.EntityMetadata
+                .Where(e => e.DisplayName?.UserLocalizedLabel != null)
+                .ToDictionary(
+                    e => e.LogicalName,
+                    e => e.DisplayName.UserLocalizedLabel.Label,
+                    StringComparer.OrdinalIgnoreCase);
         }
 
         public void ClearCache()

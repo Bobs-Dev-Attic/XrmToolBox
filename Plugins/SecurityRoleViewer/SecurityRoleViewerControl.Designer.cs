@@ -31,6 +31,8 @@ namespace SecurityRoleViewer
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.tsddLevels = new System.Windows.Forms.ToolStripDropDownButton();
             this.tsddColumns = new System.Windows.Forms.ToolStripDropDownButton();
+            this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
+            this.tsbDisplayNames = new System.Windows.Forms.ToolStripButton();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.clbRoles = new System.Windows.Forms.CheckedListBox();
             this.tabRoles = new System.Windows.Forms.TabControl();
@@ -100,7 +102,9 @@ namespace SecurityRoleViewer
                 this.tstEntitySearch,
                 this.toolStripSeparator3,
                 this.tsddLevels,
-                this.tsddColumns
+                this.tsddColumns,
+                this.toolStripSeparator4,
+                this.tsbDisplayNames
             });
             this.tsFilters.Dock = System.Windows.Forms.DockStyle.Top;
             this.tsFilters.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
@@ -132,6 +136,14 @@ namespace SecurityRoleViewer
             this.tsddColumns.Name = "tsddColumns";
             this.tsddColumns.Text = "Levels";
             this.tsddColumns.ShowDropDownArrow = true;
+
+            // tsbDisplayNames
+            this.tsbDisplayNames.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.tsbDisplayNames.Name = "tsbDisplayNames";
+            this.tsbDisplayNames.Text = "Display Names";
+            this.tsbDisplayNames.CheckOnClick = true;
+            this.tsbDisplayNames.Enabled = false;
+            this.tsbDisplayNames.Click += new System.EventHandler(this.tsbDisplayNames_Click);
 
             // splitContainer1
             this.splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -199,6 +211,8 @@ namespace SecurityRoleViewer
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
         private System.Windows.Forms.ToolStripDropDownButton tsddLevels;
         private System.Windows.Forms.ToolStripDropDownButton tsddColumns;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator4;
+        private System.Windows.Forms.ToolStripButton tsbDisplayNames;
         private System.Windows.Forms.SplitContainer splitContainer1;
         private System.Windows.Forms.CheckedListBox clbRoles;
         private System.Windows.Forms.TabControl tabRoles;
