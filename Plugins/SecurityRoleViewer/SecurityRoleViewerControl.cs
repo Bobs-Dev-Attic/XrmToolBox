@@ -30,6 +30,8 @@ namespace SecurityRoleViewer
 
         private SecurityRoleService _roleService;
         private List<Entity> _allRoles;
+        private Dictionary<string, string> _entityDisplayNames
+            = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<Guid, List<RolePrivilegeInfo>> _loadedPrivileges
             = new Dictionary<Guid, List<RolePrivilegeInfo>>();
         private readonly Dictionary<int, ToolStripMenuItem> _levelMenuItems
@@ -130,7 +132,27 @@ namespace SecurityRoleViewer
                 Message = "Loading security roles...",
                 Work = (w, args) =>
                 {
-                    args.Result = _roleService.GetRoles();
+                    var roles = _roleService.GetRoles();
+
+                    // Resolve entity display names alongside the roles. If the caller
+                    // lacks metadata read access we still want the roles to load, so
+                    // failures here fall back to an empty map (logical names shown).
+                    Dictionary<string, string> displayNames;
+                    try
+                    {
+                        displayNames = _roleService.GetEntityDisplayNames();
+                    }
+                    catch
+                    {
+                        displayNames = new Dictionary<string, string>(
+                            StringComparer.OrdinalIgnoreCase);
+                    }
+
+                    args.Result = new LoadResult
+                    {
+                        Roles = roles,
+                        DisplayNames = displayNames
+                    };
                 },
                 PostWorkCallBack = args =>
                 {
@@ -140,7 +162,9 @@ namespace SecurityRoleViewer
                         return;
                     }
 
-                    _allRoles = (List<Entity>)args.Result;
+                    var result = (LoadResult)args.Result;
+                    _allRoles = result.Roles;
+                    _entityDisplayNames = result.DisplayNames;
                     PopulateRoleList();
                     tsbExport.Enabled = false;
                     RebuildMatrixPanel();
@@ -307,12 +331,18 @@ namespace SecurityRoleViewer
             var entityGroups = privileges
                 .Where(p => !string.IsNullOrEmpty(p.EntityName))
                 .GroupBy(p => p.EntityName)
-                .OrderBy(g => g.Key);
+                .OrderBy(g => ResolveDisplayName(g.Key), StringComparer.OrdinalIgnoreCase);
 
             foreach (var group in entityGroups)
             {
+                var logicalName = group.Key;
+                var displayName = ResolveDisplayName(logicalName);
+
+                // Match the keyword against both the display name and the logical
+                // name so either spelling finds the entity.
                 if (keyword.Length > 0
-                    && group.Key.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0)
+                    && displayName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0
+                    && logicalName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
 
                 var byType = group
@@ -340,10 +370,25 @@ namespace SecurityRoleViewer
                 if (!anyVisible)
                     continue;
 
-                rows.Add(new EntityRow { EntityName = group.Key, Depths = depths });
+                rows.Add(new EntityRow
+                {
+                    EntityName = logicalName,
+                    DisplayName = displayName,
+                    Depths = depths
+                });
             }
 
             return rows;
+        }
+
+        private string ResolveDisplayName(string logicalName)
+        {
+            if (!string.IsNullOrEmpty(logicalName)
+                && _entityDisplayNames.TryGetValue(logicalName, out var displayName)
+                && !string.IsNullOrEmpty(displayName))
+                return displayName;
+
+            return logicalName;
         }
 
         private DataGridView CreateMatrixGrid(List<EntityRow> entityRows, bool[] visibleColumns)
@@ -397,7 +442,9 @@ namespace SecurityRoleViewer
             {
                 var row = new DataGridViewRow();
                 row.CreateCells(grid);
-                row.Cells[0].Value = entityRow.EntityName;
+                row.Cells[0].Value = entityRow.DisplayName;
+                // Hovering the entity name reveals its logical name.
+                row.Cells[0].ToolTipText = "Logical name: " + entityRow.EntityName;
 
                 for (int k = 0; k < columnMap.Count; k++)
                     row.Cells[k + 1].Value = entityRow.Depths[columnMap[k]];
@@ -563,7 +610,14 @@ namespace SecurityRoleViewer
         private class EntityRow
         {
             public string EntityName { get; set; }
+            public string DisplayName { get; set; }
             public int[] Depths { get; set; }
+        }
+
+        private class LoadResult
+        {
+            public List<Entity> Roles { get; set; }
+            public Dictionary<string, string> DisplayNames { get; set; }
         }
     }
 }
