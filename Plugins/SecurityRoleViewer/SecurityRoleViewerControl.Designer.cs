@@ -130,7 +130,7 @@ namespace SecurityRoleViewer
             // tsddColumns
             this.tsddColumns.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
             this.tsddColumns.Name = "tsddColumns";
-            this.tsddColumns.Text = "Columns";
+            this.tsddColumns.Text = "Levels";
             this.tsddColumns.ShowDropDownArrow = true;
 
             // splitContainer1
