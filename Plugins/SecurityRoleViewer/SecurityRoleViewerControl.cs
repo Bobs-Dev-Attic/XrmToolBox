@@ -414,7 +414,7 @@ namespace SecurityRoleViewer
                 HeaderText = "Entity",
                 Name = "colEntity",
                 Width = 180,
-                SortMode = DataGridViewColumnSortMode.NotSortable
+                SortMode = DataGridViewColumnSortMode.Automatic
             };
             grid.Columns.Add(entityCol);
 
@@ -431,7 +431,7 @@ namespace SecurityRoleViewer
                     HeaderText = ColumnLabel(PrivilegeColumns[c]),
                     Name = "col" + PrivilegeColumns[c],
                     Width = 65,
-                    SortMode = DataGridViewColumnSortMode.NotSortable,
+                    SortMode = DataGridViewColumnSortMode.Automatic,
                     DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter }
                 };
                 grid.Columns.Add(col);
