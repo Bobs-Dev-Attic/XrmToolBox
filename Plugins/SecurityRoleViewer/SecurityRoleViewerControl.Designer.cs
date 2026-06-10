@@ -21,7 +21,9 @@ namespace SecurityRoleViewer
             this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
             this.tstSearch = new System.Windows.Forms.ToolStripTextBox();
             this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
-            this.tsbExport = new System.Windows.Forms.ToolStripButton();
+            this.tsbExport = new System.Windows.Forms.ToolStripDropDownButton();
+            this.tsbExportCsv = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsbExportExcel = new System.Windows.Forms.ToolStripMenuItem();
             this.tsFilters = new System.Windows.Forms.ToolStrip();
             this.toolStripLabelFilters = new System.Windows.Forms.ToolStripLabel();
             this.toolStripLabelEntity = new System.Windows.Forms.ToolStripLabel();
@@ -74,8 +76,22 @@ namespace SecurityRoleViewer
             this.tsbExport.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
             this.tsbExport.Enabled = false;
             this.tsbExport.Name = "tsbExport";
-            this.tsbExport.Text = "Export CSV";
-            this.tsbExport.Click += new System.EventHandler(this.tsbExport_Click);
+            this.tsbExport.Text = "Export";
+            this.tsbExport.ShowDropDownArrow = true;
+            this.tsbExport.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+                this.tsbExportCsv,
+                this.tsbExportExcel
+            });
+
+            // tsbExportCsv
+            this.tsbExportCsv.Name = "tsbExportCsv";
+            this.tsbExportCsv.Text = "Export CSV";
+            this.tsbExportCsv.Click += new System.EventHandler(this.tsbExportCsv_Click);
+
+            // tsbExportExcel
+            this.tsbExportExcel.Name = "tsbExportExcel";
+            this.tsbExportExcel.Text = "Export Excel";
+            this.tsbExportExcel.Click += new System.EventHandler(this.tsbExportExcel_Click);
 
             // tsFilters (filter strip for the selected role tabs)
             this.tsFilters.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
@@ -173,7 +189,9 @@ namespace SecurityRoleViewer
         private System.Windows.Forms.ToolStripLabel toolStripLabel1;
         private System.Windows.Forms.ToolStripTextBox tstSearch;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
-        private System.Windows.Forms.ToolStripButton tsbExport;
+        private System.Windows.Forms.ToolStripDropDownButton tsbExport;
+        private System.Windows.Forms.ToolStripMenuItem tsbExportCsv;
+        private System.Windows.Forms.ToolStripMenuItem tsbExportExcel;
         private System.Windows.Forms.ToolStrip tsFilters;
         private System.Windows.Forms.ToolStripLabel toolStripLabelFilters;
         private System.Windows.Forms.ToolStripLabel toolStripLabelEntity;

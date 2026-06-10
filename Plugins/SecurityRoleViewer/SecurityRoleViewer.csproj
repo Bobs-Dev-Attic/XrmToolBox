@@ -46,6 +46,7 @@
     <Compile Include="Models\RolePrivilegeInfo.cs" />
     <Compile Include="Services\SecurityRoleService.cs" />
     <Compile Include="Export\CsvExporter.cs" />
+    <Compile Include="Export\ExcelExporter.cs" />
     <Compile Include="SecurityRoleViewerControl.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -66,6 +67,9 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="EPPlus">
+      <Version>4.5.3.3</Version>
+    </PackageReference>
     <PackageReference Include="Microsoft.CrmSdk.CoreAssemblies">
       <Version>9.0.2.59</Version>
     </PackageReference>

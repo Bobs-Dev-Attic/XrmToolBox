@@ -479,20 +479,25 @@ namespace SecurityRoleViewer
                 RebuildMatrixPanel();
         }
 
-        private void tsbExport_Click(object sender, EventArgs e)
+        private List<RolePrivilegeInfo> CollectCheckedPrivileges()
         {
-            var allPrivileges = new List<RolePrivilegeInfo>();
+            var all = new List<RolePrivilegeInfo>();
             for (int i = 0; i < clbRoles.Items.Count; i++)
             {
                 if (clbRoles.GetItemChecked(i))
                 {
                     var item = clbRoles.Items[i] as RoleListItem;
                     if (item != null && _loadedPrivileges.ContainsKey(item.RoleId))
-                        allPrivileges.AddRange(_loadedPrivileges[item.RoleId]);
+                        all.AddRange(_loadedPrivileges[item.RoleId]);
                 }
             }
+            return all;
+        }
 
-            if (allPrivileges.Count == 0)
+        private void tsbExportCsv_Click(object sender, EventArgs e)
+        {
+            var privileges = CollectCheckedPrivileges();
+            if (privileges.Count == 0)
             {
                 MessageBox.Show("No privileges loaded to export. Select a role first.",
                     "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -507,7 +512,32 @@ namespace SecurityRoleViewer
 
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    CsvExporter.Export(dialog.FileName, allPrivileges);
+                    CsvExporter.Export(dialog.FileName, privileges);
+                    MessageBox.Show($"Exported privileges to:\n{dialog.FileName}",
+                        "Export Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+        }
+
+        private void tsbExportExcel_Click(object sender, EventArgs e)
+        {
+            var privileges = CollectCheckedPrivileges();
+            if (privileges.Count == 0)
+            {
+                MessageBox.Show("No privileges loaded to export. Select a role first.",
+                    "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (var dialog = new SaveFileDialog())
+            {
+                dialog.FileName = "SecurityRolePrivileges.xlsx";
+                dialog.Filter = "Excel files (*.xlsx)|*.xlsx";
+                dialog.Title = "Export Role Privileges";
+
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    ExcelExporter.Export(dialog.FileName, privileges);
                     MessageBox.Show($"Exported privileges to:\n{dialog.FileName}",
                         "Export Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
