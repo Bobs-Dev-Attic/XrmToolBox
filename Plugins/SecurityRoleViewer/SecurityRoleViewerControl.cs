@@ -553,7 +553,7 @@ namespace SecurityRoleViewer
 
             using (var dialog = new SaveFileDialog())
             {
-                dialog.FileName = "SecurityRolePrivileges.csv";
+                dialog.FileName = $"SecurityRolePrivileges_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
                 dialog.Filter = "CSV files (*.csv)|*.csv";
                 dialog.Title = "Export Role Privileges";
 
@@ -578,7 +578,7 @@ namespace SecurityRoleViewer
 
             using (var dialog = new SaveFileDialog())
             {
-                dialog.FileName = "SecurityRolePrivileges.xls";
+                dialog.FileName = $"SecurityRolePrivileges_{DateTime.Now:yyyyMMdd_HHmmss}.xls";
                 dialog.Filter = "Excel files (*.xls)|*.xls";
                 dialog.Title = "Export Role Privileges";
 
