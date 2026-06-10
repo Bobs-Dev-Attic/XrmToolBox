@@ -578,8 +578,8 @@ namespace SecurityRoleViewer
 
             using (var dialog = new SaveFileDialog())
             {
-                dialog.FileName = "SecurityRolePrivileges.xlsx";
-                dialog.Filter = "Excel files (*.xlsx)|*.xlsx";
+                dialog.FileName = "SecurityRolePrivileges.xls";
+                dialog.Filter = "Excel files (*.xls)|*.xls";
                 dialog.Title = "Export Role Privileges";
 
                 if (dialog.ShowDialog() == DialogResult.OK)
