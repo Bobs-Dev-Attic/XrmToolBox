@@ -9,6 +9,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Plugins", "Plugins", "{1A78
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MsCrmTools.SampleTool", "Plugins\MsCrmTools.SampleTool\MsCrmTools.SampleTool.csproj", "{5BF1E228-F898-40CF-B8FB-8412D8C81CFF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SecurityRoleViewer", "Plugins\SecurityRoleViewer\SecurityRoleViewer.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XrmToolBox.Extensibility", "XrmToolBox.Extensibility\XrmToolBox.Extensibility.csproj", "{DF77AEA3-43F7-403C-91AF-3023A3BB06EC}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XrmToolBox.AutoUpdater", "XrmToolBox.AutoUpdater\XrmToolBox.AutoUpdater.csproj", "{564C72C8-586E-4218-B6B3-F464F7C3903A}"
@@ -44,6 +46,16 @@ Global
 		{328D55BE-8B9A-4087-A5C2-9FBAF623F54B}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
 		{328D55BE-8B9A-4087-A5C2-9FBAF623F54B}.Release|Mixed Platforms.Build.0 = Release|Any CPU
 		{328D55BE-8B9A-4087-A5C2-9FBAF623F54B}.Release|x86.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Mixed Platforms.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Mixed Platforms.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x86.ActiveCfg = Release|Any CPU
 		{5BF1E228-F898-40CF-B8FB-8412D8C81CFF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{5BF1E228-F898-40CF-B8FB-8412D8C81CFF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5BF1E228-F898-40CF-B8FB-8412D8C81CFF}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
@@ -94,6 +106,7 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{5BF1E228-F898-40CF-B8FB-8412D8C81CFF} = {1A7814D2-1185-484E-92CC-7DD71DDE6488}
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890} = {1A7814D2-1185-484E-92CC-7DD71DDE6488}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		BuildVersion_ConfigurationName = Release
