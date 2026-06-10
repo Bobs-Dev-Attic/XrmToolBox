@@ -9,6 +9,9 @@ namespace SecurityRoleViewer.Services
 {
     public class SecurityRoleService
     {
+        private static readonly string[] StandardPrivilegeTypes =
+            { "Create", "Read", "Write", "Delete", "Append", "AppendTo", "Assign", "Share" };
+
         private readonly IOrganizationService _service;
         private readonly Dictionary<Guid, List<RolePrivilegeInfo>> _cache
             = new Dictionary<Guid, List<RolePrivilegeInfo>>();
@@ -62,6 +65,7 @@ namespace SecurityRoleViewer.Services
                 var privName = entity.GetAttributeValue<AliasedValue>("priv.name")?.Value?.ToString() ?? "";
                 var depthMask = entity.GetAttributeValue<int>("privilegedepthmask");
                 var otcValue = entity.GetAttributeValue<AliasedValue>("otc.objecttypecode")?.Value;
+                var accessRight = entity.GetAttributeValue<AliasedValue>("priv.accessright")?.Value;
 
                 int objectTypeCode = -1;
                 string entityName = "";
@@ -70,7 +74,6 @@ namespace SecurityRoleViewer.Services
                 if (otcValue != null)
                 {
                     entityName = otcValue.ToString();
-                    // Custom entities have a publisher prefix with underscore
                     category = entityName.Contains("_") ? "Custom Entities" : "Core Entities";
                     objectTypeCode = entityName.Contains("_") ? 10000 : 1;
                 }
@@ -81,11 +84,14 @@ namespace SecurityRoleViewer.Services
                 else if (depthMask >= 2) depth = 2;
                 else if (depthMask >= 1) depth = 1;
 
+                var privilegeType = MapPrivilegeType(privName, accessRight);
+
                 privileges.Add(new RolePrivilegeInfo
                 {
                     RoleName = roleName,
                     EntityName = entityName,
                     PrivilegeName = privName,
+                    PrivilegeType = privilegeType,
                     Depth = depth,
                     ObjectTypeCode = objectTypeCode,
                     Category = category
@@ -101,6 +107,39 @@ namespace SecurityRoleViewer.Services
 
             _cache[roleId] = privileges;
             return privileges;
+        }
+
+        private static string MapPrivilegeType(string privilegeName, object accessRight)
+        {
+            if (accessRight != null)
+            {
+                var ar = Convert.ToInt32(accessRight);
+                switch (ar)
+                {
+                    case 1: return "Read";
+                    case 2: return "Write";
+                    case 4: return "Append";
+                    case 16: return "Create";
+                    case 32: return "Delete";
+                    case 65536: return "AppendTo";
+                    case 524288: return "Assign";
+                    case 262144: return "Share";
+                }
+            }
+
+            if (string.IsNullOrEmpty(privilegeName)) return "Other";
+
+            var lower = privilegeName.ToLowerInvariant();
+            if (lower.StartsWith("prvcreate")) return "Create";
+            if (lower.StartsWith("prvread")) return "Read";
+            if (lower.StartsWith("prvwrite")) return "Write";
+            if (lower.StartsWith("prvdelete")) return "Delete";
+            if (lower.StartsWith("prvappendto")) return "AppendTo";
+            if (lower.StartsWith("prvappend")) return "Append";
+            if (lower.StartsWith("prvassign")) return "Assign";
+            if (lower.StartsWith("prvshare")) return "Share";
+
+            return "Other";
         }
 
         public void ClearCache()

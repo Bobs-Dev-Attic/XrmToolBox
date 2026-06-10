@@ -5,6 +5,7 @@ using SecurityRoleViewer.Services;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 using XrmToolBox.Extensibility;
@@ -15,16 +16,17 @@ namespace SecurityRoleViewer
 {
     public partial class SecurityRoleViewerControl : PluginControlBase, IGitHubPlugin, IHelpPlugin, IStatusBarMessenger
     {
+        private static readonly string[] PrivilegeColumns =
+            { "Create", "Read", "Write", "Delete", "Append", "AppendTo", "Assign", "Share" };
+
         private SecurityRoleService _roleService;
         private List<Entity> _allRoles;
-        private Guid _selectedRoleId;
-        private string _selectedRoleName;
-        private List<RolePrivilegeInfo> _currentPrivileges;
+        private readonly Dictionary<Guid, List<RolePrivilegeInfo>> _loadedPrivileges
+            = new Dictionary<Guid, List<RolePrivilegeInfo>>();
 
         public SecurityRoleViewerControl()
         {
             InitializeComponent();
-            tscbFilter.SelectedIndex = 0;
         }
 
         public event EventHandler<StatusBarMessageEventArgs> SendMessageToStatusBar;
@@ -41,6 +43,7 @@ namespace SecurityRoleViewer
         private void LoadRoles()
         {
             _roleService = new SecurityRoleService(Service);
+            _loadedPrivileges.Clear();
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -58,8 +61,9 @@ namespace SecurityRoleViewer
                     }
 
                     _allRoles = (List<Entity>)args.Result;
-                    BuildTree(_allRoles);
+                    PopulateRoleList();
                     tsbExport.Enabled = false;
+                    pnlMatrix.Controls.Clear();
 
                     SendMessageToStatusBar?.Invoke(this,
                         new StatusBarMessageEventArgs($"Loaded {_allRoles.Count} roles"));
@@ -67,119 +71,56 @@ namespace SecurityRoleViewer
             });
         }
 
-        private void BuildTree(List<Entity> roles)
+        private void PopulateRoleList()
         {
-            tvRoles.BeginUpdate();
-            tvRoles.Nodes.Clear();
-
+            clbRoles.Items.Clear();
             var searchText = tstSearch.Text?.Trim() ?? "";
-            var filterLevel = tscbFilter.SelectedItem?.ToString() ?? "All";
 
-            foreach (var role in roles)
+            foreach (var role in _allRoles)
             {
                 var roleName = role.GetAttributeValue<string>("name") ?? "";
                 var roleId = role.GetAttributeValue<Guid>("roleid");
                 var buRef = role.GetAttributeValue<EntityReference>("businessunitid");
                 var buName = buRef?.Name ?? "";
 
+                if (!string.IsNullOrEmpty(searchText)
+                    && roleName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
                 var displayName = string.IsNullOrEmpty(buName)
                     ? roleName
                     : $"{roleName} ({buName})";
 
-                if (_roleService != null && _roleService.IsCached(roleId))
+                var item = new RoleListItem(roleId, roleName, displayName);
+                bool wasChecked = _loadedPrivileges.ContainsKey(roleId);
+                clbRoles.Items.Add(item, wasChecked);
+            }
+        }
+
+        private void clbRoles_ItemCheck(object sender, ItemCheckEventArgs e)
+        {
+            var item = clbRoles.Items[e.Index] as RoleListItem;
+            if (item == null) return;
+
+            if (e.NewValue == CheckState.Checked)
+            {
+                if (!_loadedPrivileges.ContainsKey(item.RoleId))
                 {
-                    var privileges = _roleService.GetRolePrivileges(roleId, roleName);
-                    var filtered = ApplyFilters(privileges, searchText, filterLevel);
-
-                    if (!string.IsNullOrEmpty(searchText) && filtered.Count == 0
-                        && roleName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) < 0)
-                        continue;
-
-                    var roleNode = new TreeNode(displayName) { Tag = roleId };
-                    AddCategoryNodes(roleNode, filtered);
-                    tvRoles.Nodes.Add(roleNode);
-                }
-                else
-                {
-                    if (!string.IsNullOrEmpty(searchText)
-                        && roleName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) < 0)
-                        continue;
-
-                    var roleNode = new TreeNode(displayName) { Tag = roleId };
-                    tvRoles.Nodes.Add(roleNode);
+                    LoadRolePrivileges(item.RoleId, item.RoleName);
+                    return;
                 }
             }
+            else
+            {
+                _loadedPrivileges.Remove(item.RoleId);
+            }
 
-            tvRoles.EndUpdate();
+            BeginInvoke((Action)RebuildMatrixPanel);
         }
 
-        private void AddCategoryNodes(TreeNode roleNode, List<RolePrivilegeInfo> privileges)
-        {
-            var groups = privileges
-                .GroupBy(p => p.Category)
-                .OrderBy(g => g.Key == "Core Entities" ? 0 : g.Key == "Custom Entities" ? 1 : 2);
-
-            foreach (var group in groups)
-            {
-                var categoryNode = new TreeNode(group.Key);
-
-                var entityGroups = group.GroupBy(p => string.IsNullOrEmpty(p.EntityName) ? p.PrivilegeName : p.EntityName);
-                foreach (var entityGroup in entityGroups.OrderBy(eg => eg.Key))
-                {
-                    var entityNode = new TreeNode(entityGroup.Key)
-                    {
-                        Tag = entityGroup.ToList()
-                    };
-                    categoryNode.Nodes.Add(entityNode);
-                }
-
-                roleNode.Nodes.Add(categoryNode);
-            }
-        }
-
-        private List<RolePrivilegeInfo> ApplyFilters(List<RolePrivilegeInfo> privileges, string searchText, string filterLevel)
-        {
-            var result = privileges.AsEnumerable();
-
-            if (!string.IsNullOrEmpty(searchText))
-            {
-                result = result.Where(p =>
-                    p.EntityName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    p.PrivilegeName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0);
-            }
-
-            if (filterLevel != "All")
-            {
-                result = result.Where(p => p.AccessLevelLabel == filterLevel);
-            }
-
-            return result.ToList();
-        }
-
-        private void tvRoles_AfterSelect(object sender, TreeViewEventArgs e)
-        {
-            if (e.Node.Tag is List<RolePrivilegeInfo> entityPrivileges)
-            {
-                PopulateGrid(entityPrivileges);
-                lblDetailHeader.Text = e.Node.Text;
-                return;
-            }
-
-            if (e.Node.Tag is Guid roleId)
-            {
-                _selectedRoleId = roleId;
-                _selectedRoleName = e.Node.Text;
-                tsbExport.Enabled = true;
-
-                LoadRolePrivileges(roleId, e.Node);
-            }
-        }
-
-        private void LoadRolePrivileges(Guid roleId, TreeNode roleNode)
+        private void LoadRolePrivileges(Guid roleId, string roleName)
         {
             if (_roleService == null) return;
-
-            var roleName = roleNode.Text;
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -196,77 +137,228 @@ namespace SecurityRoleViewer
                         return;
                     }
 
-                    _currentPrivileges = (List<RolePrivilegeInfo>)args.Result;
-
-                    var searchText = tstSearch.Text?.Trim() ?? "";
-                    var filterLevel = tscbFilter.SelectedItem?.ToString() ?? "All";
-                    var filtered = ApplyFilters(_currentPrivileges, searchText, filterLevel);
-
-                    roleNode.Nodes.Clear();
-                    AddCategoryNodes(roleNode, filtered);
-                    roleNode.Expand();
-
-                    tsbExport.Enabled = true;
-                    dgvPrivileges.Rows.Clear();
-                    lblDetailHeader.Text = $"{roleName} - {filtered.Count} privileges";
+                    _loadedPrivileges[roleId] = (List<RolePrivilegeInfo>)args.Result;
+                    tsbExport.Enabled = _loadedPrivileges.Count > 0;
+                    RebuildMatrixPanel();
 
                     SendMessageToStatusBar?.Invoke(this,
-                        new StatusBarMessageEventArgs($"Loaded {_currentPrivileges.Count} privileges for {roleName}"));
+                        new StatusBarMessageEventArgs(
+                            $"Loaded {_loadedPrivileges[roleId].Count} privileges for {roleName}"));
                 }
             });
         }
 
-        private void PopulateGrid(List<RolePrivilegeInfo> privileges)
+        private void RebuildMatrixPanel()
         {
-            dgvPrivileges.Rows.Clear();
+            pnlMatrix.SuspendLayout();
+            pnlMatrix.Controls.Clear();
 
-            foreach (var p in privileges)
+            var checkedRoleIds = new List<Guid>();
+            for (int i = 0; i < clbRoles.Items.Count; i++)
             {
-                dgvPrivileges.Rows.Add(p.PrivilegeName, p.AccessLevelLabel);
+                if (clbRoles.GetItemChecked(i))
+                {
+                    var item = clbRoles.Items[i] as RoleListItem;
+                    if (item != null && _loadedPrivileges.ContainsKey(item.RoleId))
+                        checkedRoleIds.Add(item.RoleId);
+                }
             }
+
+            if (checkedRoleIds.Count == 0)
+            {
+                var lbl = new System.Windows.Forms.Label
+                {
+                    Text = "Check one or more roles to view privileges",
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    ForeColor = Color.Gray,
+                    Font = new Font("Segoe UI", 10F)
+                };
+                pnlMatrix.Controls.Add(lbl);
+                pnlMatrix.ResumeLayout();
+                tsbExport.Enabled = false;
+                return;
+            }
+
+            tsbExport.Enabled = true;
+            int yOffset = 0;
+
+            foreach (var roleId in checkedRoleIds)
+            {
+                var privileges = _loadedPrivileges[roleId];
+                var roleName = privileges.FirstOrDefault()?.RoleName ?? "Unknown";
+
+                var header = new System.Windows.Forms.Label
+                {
+                    Text = roleName,
+                    Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                    Height = 28,
+                    Width = pnlMatrix.ClientSize.Width - 20,
+                    Location = new Point(4, yOffset),
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                };
+                pnlMatrix.Controls.Add(header);
+                yOffset += 30;
+
+                var entityPrivileges = privileges
+                    .Where(p => !string.IsNullOrEmpty(p.EntityName))
+                    .GroupBy(p => p.EntityName)
+                    .OrderBy(g => g.Key)
+                    .ToList();
+
+                var grid = CreateMatrixGrid(entityPrivileges);
+                grid.Location = new Point(4, yOffset);
+                grid.Width = pnlMatrix.ClientSize.Width - 20;
+                grid.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+                int rowHeight = grid.RowTemplate.Height;
+                int headerHeight = grid.ColumnHeadersHeight;
+                int gridHeight = headerHeight + (entityPrivileges.Count * rowHeight) + 4;
+                grid.Height = Math.Min(gridHeight, 500);
+                grid.ScrollBars = gridHeight > 500 ? ScrollBars.Vertical : ScrollBars.None;
+
+                pnlMatrix.Controls.Add(grid);
+                yOffset += grid.Height + 12;
+            }
+
+            pnlMatrix.ResumeLayout();
         }
 
-        private void dgvPrivileges_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
+        private DataGridView CreateMatrixGrid(List<IGrouping<string, RolePrivilegeInfo>> entityGroups)
         {
-            if (e.ColumnIndex != 1 || e.Value == null) return;
-
-            var level = e.Value.ToString();
-            switch (level)
+            var grid = new DataGridView
             {
-                case "Organization":
-                    e.CellStyle.ForeColor = Color.DarkGreen;
-                    e.CellStyle.Font = new Font(dgvPrivileges.Font, FontStyle.Bold);
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                ReadOnly = true,
+                RowHeadersVisible = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
+                DefaultCellStyle = { SelectionBackColor = Color.White, SelectionForeColor = Color.Black },
+                BackgroundColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+                GridColor = Color.FromArgb(230, 230, 230)
+            };
+
+            var entityCol = new DataGridViewTextBoxColumn
+            {
+                HeaderText = "Entity",
+                Name = "colEntity",
+                Width = 180,
+                SortMode = DataGridViewColumnSortMode.NotSortable
+            };
+            grid.Columns.Add(entityCol);
+
+            foreach (var privType in PrivilegeColumns)
+            {
+                var col = new DataGridViewTextBoxColumn
+                {
+                    HeaderText = privType,
+                    Name = "col" + privType,
+                    Width = 65,
+                    SortMode = DataGridViewColumnSortMode.NotSortable,
+                    DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter }
+                };
+                grid.Columns.Add(col);
+            }
+
+            foreach (var entityGroup in entityGroups)
+            {
+                var row = new DataGridViewRow();
+                row.CreateCells(grid);
+                row.Cells[0].Value = entityGroup.Key;
+
+                var privsByType = entityGroup.ToDictionary(p => p.PrivilegeType, p => p.Depth);
+                for (int c = 0; c < PrivilegeColumns.Length; c++)
+                {
+                    int depth = 0;
+                    if (privsByType.TryGetValue(PrivilegeColumns[c], out var d))
+                        depth = d;
+                    row.Cells[c + 1].Value = depth;
+                }
+
+                grid.Rows.Add(row);
+            }
+
+            grid.CellPainting += MatrixGrid_CellPainting;
+            return grid;
+        }
+
+        private void MatrixGrid_CellPainting(object sender, DataGridViewCellPaintingEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 1) return;
+            if (!(e.Value is int depth)) return;
+
+            e.Paint(e.CellBounds, DataGridViewPaintParts.Background | DataGridViewPaintParts.Border);
+
+            int size = 16;
+            int x = e.CellBounds.X + (e.CellBounds.Width - size) / 2;
+            int y = e.CellBounds.Y + (e.CellBounds.Height - size) / 2;
+            var rect = new Rectangle(x, y, size, size);
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+            switch (depth)
+            {
+                case 0:
+                    using (var pen = new Pen(Color.FromArgb(200, 60, 60), 1.5f))
+                        e.Graphics.DrawEllipse(pen, rect);
                     break;
-                case "Parent-Child BU":
-                    e.CellStyle.ForeColor = Color.Blue;
+                case 1:
+                    using (var brush = new SolidBrush(Color.FromArgb(240, 200, 50)))
+                        e.Graphics.FillEllipse(brush, rect);
                     break;
-                case "Business Unit":
-                    e.CellStyle.ForeColor = Color.Goldenrod;
+                case 2:
+                    using (var brush = new SolidBrush(Color.FromArgb(160, 200, 60)))
+                        e.Graphics.FillEllipse(brush, rect);
                     break;
-                case "User":
-                    e.CellStyle.ForeColor = Color.Orange;
+                case 4:
+                    using (var brush = new SolidBrush(Color.FromArgb(80, 180, 80)))
+                    {
+                        e.Graphics.FillEllipse(brush, rect);
+                        using (var pen = new Pen(Color.White, 1.5f))
+                        {
+                            e.Graphics.DrawLine(pen,
+                                x + 4, y + size / 2,
+                                x + size / 2 - 1, y + size - 5);
+                            e.Graphics.DrawLine(pen,
+                                x + size / 2 - 1, y + size - 5,
+                                x + size - 4, y + 4);
+                        }
+                    }
                     break;
-                case "None":
-                    e.CellStyle.ForeColor = Color.Gray;
+                case 8:
+                    using (var brush = new SolidBrush(Color.FromArgb(40, 150, 40)))
+                        e.Graphics.FillEllipse(brush, rect);
                     break;
             }
+
+            e.Handled = true;
         }
 
         private void tstSearch_TextChanged(object sender, EventArgs e)
         {
             if (_allRoles != null)
-                BuildTree(_allRoles);
-        }
-
-        private void tscbFilter_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (_allRoles != null)
-                BuildTree(_allRoles);
+                PopulateRoleList();
         }
 
         private void tsbExport_Click(object sender, EventArgs e)
         {
-            if (_currentPrivileges == null || _currentPrivileges.Count == 0)
+            var allPrivileges = new List<RolePrivilegeInfo>();
+            for (int i = 0; i < clbRoles.Items.Count; i++)
+            {
+                if (clbRoles.GetItemChecked(i))
+                {
+                    var item = clbRoles.Items[i] as RoleListItem;
+                    if (item != null && _loadedPrivileges.ContainsKey(item.RoleId))
+                        allPrivileges.AddRange(_loadedPrivileges[item.RoleId]);
+                }
+            }
+
+            if (allPrivileges.Count == 0)
             {
                 MessageBox.Show("No privileges loaded to export. Select a role first.",
                     "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -275,19 +367,33 @@ namespace SecurityRoleViewer
 
             using (var dialog = new SaveFileDialog())
             {
-                var safeName = string.Join("_", _selectedRoleName.Split(
-                    System.IO.Path.GetInvalidFileNameChars()));
-                dialog.FileName = $"{safeName}_Privileges.csv";
+                dialog.FileName = "SecurityRolePrivileges.csv";
                 dialog.Filter = "CSV files (*.csv)|*.csv";
                 dialog.Title = "Export Role Privileges";
 
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    CsvExporter.Export(dialog.FileName, _currentPrivileges);
-                    MessageBox.Show($"Exported {_currentPrivileges.Count} privileges to:\n{dialog.FileName}",
+                    CsvExporter.Export(dialog.FileName, allPrivileges);
+                    MessageBox.Show($"Exported privileges to:\n{dialog.FileName}",
                         "Export Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
+        }
+
+        private class RoleListItem
+        {
+            public Guid RoleId { get; }
+            public string RoleName { get; }
+            private readonly string _displayName;
+
+            public RoleListItem(Guid roleId, string roleName, string displayName)
+            {
+                RoleId = roleId;
+                RoleName = roleName;
+                _displayName = displayName;
+            }
+
+            public override string ToString() => _displayName;
         }
     }
 }

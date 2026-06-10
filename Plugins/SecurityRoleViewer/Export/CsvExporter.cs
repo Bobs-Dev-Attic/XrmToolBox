@@ -1,25 +1,40 @@
 using SecurityRoleViewer.Models;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace SecurityRoleViewer.Export
 {
     public static class CsvExporter
     {
+        private static readonly string[] PrivilegeTypes =
+            { "Create", "Read", "Write", "Delete", "Append", "AppendTo", "Assign", "Share" };
+
         public static void Export(string filePath, List<RolePrivilegeInfo> privileges)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("Role,Category,Entity,Privilege,AccessLevel");
+            sb.AppendLine("Role,Entity,Create,Read,Write,Delete,Append,AppendTo,Assign,Share");
 
-            foreach (var p in privileges)
+            var grouped = privileges
+                .Where(p => !string.IsNullOrEmpty(p.EntityName))
+                .GroupBy(p => new { p.RoleName, p.EntityName })
+                .OrderBy(g => g.Key.RoleName)
+                .ThenBy(g => g.Key.EntityName);
+
+            foreach (var group in grouped)
             {
-                sb.AppendLine(string.Format("\"{0}\",\"{1}\",\"{2}\",\"{3}\",\"{4}\"",
-                    Escape(p.RoleName),
-                    Escape(p.Category),
-                    Escape(p.EntityName),
-                    Escape(p.PrivilegeName),
-                    Escape(p.AccessLevelLabel)));
+                var privsByType = group.ToDictionary(p => p.PrivilegeType, p => p.AccessLevelLabel);
+
+                sb.Append($"\"{Escape(group.Key.RoleName)}\",\"{Escape(group.Key.EntityName)}\"");
+                foreach (var pt in PrivilegeTypes)
+                {
+                    string level = "";
+                    if (privsByType.TryGetValue(pt, out var l))
+                        level = l;
+                    sb.Append($",\"{Escape(level)}\"");
+                }
+                sb.AppendLine();
             }
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);

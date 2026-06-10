@@ -5,6 +5,7 @@ namespace SecurityRoleViewer.Models
         public string RoleName { get; set; }
         public string EntityName { get; set; }
         public string PrivilegeName { get; set; }
+        public string PrivilegeType { get; set; }
         public int Depth { get; set; }
         public int ObjectTypeCode { get; set; }
         public string Category { get; set; }
