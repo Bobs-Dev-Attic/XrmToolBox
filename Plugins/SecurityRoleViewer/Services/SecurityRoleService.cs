@@ -1,4 +1,6 @@
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 using SecurityRoleViewer.Models;
 using System;
@@ -15,6 +17,7 @@ namespace SecurityRoleViewer.Services
         private readonly IOrganizationService _service;
         private readonly Dictionary<Guid, List<RolePrivilegeInfo>> _cache
             = new Dictionary<Guid, List<RolePrivilegeInfo>>();
+        private Dictionary<string, string> _displayNameCache;
 
         public bool IsCached(Guid roleId) => _cache.ContainsKey(roleId);
 
@@ -33,6 +36,39 @@ namespace SecurityRoleViewer.Services
 
             var results = _service.RetrieveMultiple(query);
             return results.Entities.ToList();
+        }
+
+        /// <summary>
+        /// Builds a map of entity logical name -> localized display name. Only the
+        /// entity-level metadata is requested (no attributes), so this is a light
+        /// call. The result is cached for the lifetime of the service instance.
+        /// </summary>
+        public Dictionary<string, string> GetEntityDisplayNames()
+        {
+            if (_displayNameCache != null)
+                return _displayNameCache;
+
+            var request = new RetrieveAllEntitiesRequest
+            {
+                EntityFilters = EntityFilters.Entity,
+                RetrieveAsIfPublished = true
+            };
+
+            var response = (RetrieveAllEntitiesResponse)_service.Execute(request);
+
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var metadata in response.EntityMetadata)
+            {
+                if (string.IsNullOrEmpty(metadata.LogicalName))
+                    continue;
+
+                var label = metadata.DisplayName?.UserLocalizedLabel?.Label;
+                map[metadata.LogicalName] =
+                    string.IsNullOrEmpty(label) ? metadata.LogicalName : label;
+            }
+
+            _displayNameCache = map;
+            return map;
         }
 
         public List<RolePrivilegeInfo> GetRolePrivileges(Guid roleId, string roleName)
