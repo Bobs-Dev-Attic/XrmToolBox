@@ -113,14 +113,19 @@ namespace DataDictionaryBuilder
             _emptyLabel.Font = new Font("Segoe UI", 10F);
             _emptyLabel.Text = "Load entities, then check one or more to view their metadata.";
 
+            // BeginInit/EndInit defers SplitterDistance validation until the size is
+            // applied, so the 200 distance validates against the 900 width instead of
+            // the tiny default size (which would throw InvalidOperationException).
+            ((System.ComponentModel.ISupportInitialize)_split).BeginInit();
             _split.Dock = DockStyle.Fill;
             _split.Panel1MinSize = 160;
             _split.Panel2MinSize = 320;
-            _split.Size = new Size(900, 520); // valid SplitterDistance during init
+            _split.Size = new Size(900, 520);
             _split.SplitterDistance = 200;
             _split.Panel1.Controls.Add(leftPanel);
             _split.Panel2.Controls.Add(_tabs);
             _split.Panel2.Controls.Add(_emptyLabel);
+            ((System.ComponentModel.ISupportInitialize)_split).EndInit();
 
             Controls.Add(_split);
             Controls.Add(_toolStrip);
