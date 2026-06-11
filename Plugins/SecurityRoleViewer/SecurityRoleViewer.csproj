@@ -44,7 +44,14 @@
   <ItemGroup>
     <Compile Include="Plugin.cs" />
     <Compile Include="NativeMethods.cs" />
+    <Compile Include="IRoleViewerHost.cs" />
     <Compile Include="Rendering\MatrixRendering.cs" />
+    <Compile Include="UserTeamRolesControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserTeamRolesControl.Designer.cs">
+      <DependentUpon>UserTeamRolesControl.cs</DependentUpon>
+    </Compile>
     <Compile Include="Models\RolePrivilegeInfo.cs" />
     <Compile Include="Services\SecurityRoleService.cs" />
     <Compile Include="Export\CsvExporter.cs" />

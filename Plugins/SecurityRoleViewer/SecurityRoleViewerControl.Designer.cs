@@ -42,6 +42,10 @@ namespace SecurityRoleViewer
             this.colRole = new System.Windows.Forms.ColumnHeader();
             this.tabRoles = new System.Windows.Forms.TabControl();
             this.lblEmpty = new System.Windows.Forms.Label();
+            this.tabsTop = new System.Windows.Forms.TabControl();
+            this.tabRolePermissions = new System.Windows.Forms.TabPage();
+            this.tabUserTeamRoles = new System.Windows.Forms.TabPage();
+            this.utrControl = new SecurityRoleViewer.UserTeamRolesControl();
 
             this.toolStrip1.SuspendLayout();
             this.tsFilters.SuspendLayout();
@@ -49,6 +53,9 @@ namespace SecurityRoleViewer
             this.splitContainer1.Panel1.SuspendLayout();
             this.splitContainer1.Panel2.SuspendLayout();
             this.splitContainer1.SuspendLayout();
+            this.tabsTop.SuspendLayout();
+            this.tabRolePermissions.SuspendLayout();
+            this.tabUserTeamRoles.SuspendLayout();
             this.SuspendLayout();
 
             // toolStrip1
@@ -219,9 +226,32 @@ namespace SecurityRoleViewer
             this.splitContainer1.Panel2.Controls.Add(this.lblEmpty);
             this.splitContainer1.Panel2.Controls.Add(this.tsFilters);
 
+            // tabRolePermissions (hosts the original role-permissions view)
+            this.tabRolePermissions.Controls.Add(this.splitContainer1);
+            this.tabRolePermissions.Controls.Add(this.toolStrip1);
+            this.tabRolePermissions.Name = "tabRolePermissions";
+            this.tabRolePermissions.Text = "Role Permissions";
+            this.tabRolePermissions.UseVisualStyleBackColor = true;
+            this.tabRolePermissions.Padding = new System.Windows.Forms.Padding(3);
+
+            // tabUserTeamRoles (hosts the new User/Team Roles view)
+            this.utrControl.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.utrControl.Name = "utrControl";
+            this.tabUserTeamRoles.Controls.Add(this.utrControl);
+            this.tabUserTeamRoles.Name = "tabUserTeamRoles";
+            this.tabUserTeamRoles.Text = "User/Team Roles";
+            this.tabUserTeamRoles.UseVisualStyleBackColor = true;
+            this.tabUserTeamRoles.Padding = new System.Windows.Forms.Padding(3);
+
+            // tabsTop
+            this.tabsTop.Controls.Add(this.tabRolePermissions);
+            this.tabsTop.Controls.Add(this.tabUserTeamRoles);
+            this.tabsTop.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.tabsTop.Name = "tabsTop";
+            this.tabsTop.SelectedIndex = 0;
+
             // SecurityRoleViewerControl
-            this.Controls.Add(this.splitContainer1);
-            this.Controls.Add(this.toolStrip1);
+            this.Controls.Add(this.tabsTop);
             this.Name = "SecurityRoleViewerControl";
             this.Size = new System.Drawing.Size(900, 550);
 
@@ -233,8 +263,11 @@ namespace SecurityRoleViewer
             this.splitContainer1.Panel2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).EndInit();
             this.splitContainer1.ResumeLayout(false);
+            this.tabRolePermissions.ResumeLayout(false);
+            this.tabRolePermissions.PerformLayout();
+            this.tabUserTeamRoles.ResumeLayout(false);
+            this.tabsTop.ResumeLayout(false);
             this.ResumeLayout(false);
-            this.PerformLayout();
         }
 
         private System.Windows.Forms.ToolStrip toolStrip1;
@@ -264,5 +297,9 @@ namespace SecurityRoleViewer
         private System.Windows.Forms.ColumnHeader colRole;
         private System.Windows.Forms.TabControl tabRoles;
         private System.Windows.Forms.Label lblEmpty;
+        private System.Windows.Forms.TabControl tabsTop;
+        private System.Windows.Forms.TabPage tabRolePermissions;
+        private System.Windows.Forms.TabPage tabUserTeamRoles;
+        private SecurityRoleViewer.UserTeamRolesControl utrControl;
     }
 }

@@ -57,6 +57,76 @@ namespace SecurityRoleViewer.Services
             return _service.RetrieveMultiple(query).Entities.ToList();
         }
 
+        public List<Entity> GetUsers(IList<Guid> businessUnitIds = null)
+        {
+            var query = new QueryExpression("systemuser")
+            {
+                ColumnSet = new ColumnSet("fullname", "businessunitid"),
+                Orders = { new OrderExpression("fullname", OrderType.Ascending) }
+            };
+            // Active users only; disabled accounts add noise to the picker.
+            query.Criteria.AddCondition("isdisabled", ConditionOperator.Equal, false);
+            AddBusinessUnitFilter(query, businessUnitIds);
+
+            return _service.RetrieveMultiple(query).Entities.ToList();
+        }
+
+        public List<Entity> GetTeams(IList<Guid> businessUnitIds = null)
+        {
+            var query = new QueryExpression("team")
+            {
+                ColumnSet = new ColumnSet("name", "businessunitid"),
+                Orders = { new OrderExpression("name", OrderType.Ascending) }
+            };
+            // Only owner teams (teamtype 0) can hold security roles.
+            query.Criteria.AddCondition("teamtype", ConditionOperator.Equal, 0);
+            AddBusinessUnitFilter(query, businessUnitIds);
+
+            return _service.RetrieveMultiple(query).Entities.ToList();
+        }
+
+        private static void AddBusinessUnitFilter(QueryExpression query, IList<Guid> businessUnitIds)
+        {
+            if (businessUnitIds != null && businessUnitIds.Count > 0)
+                query.Criteria.AddCondition(
+                    "businessunitid", ConditionOperator.In,
+                    businessUnitIds.Cast<object>().ToArray());
+        }
+
+        // Roles assigned directly to a user.
+        public List<Guid> GetUserRoleIds(Guid userId)
+            => GetIntersectIds("systemuserroles", "systemuserid", userId, "roleid");
+
+        // Teams the user is a member of.
+        public List<Guid> GetUserTeamIds(Guid userId)
+            => GetIntersectIds("teammembership", "systemuserid", userId, "teamid");
+
+        // Roles assigned to a team.
+        public List<Guid> GetTeamRoleIds(Guid teamId)
+            => GetIntersectIds("teamroles", "teamid", teamId, "roleid");
+
+        private List<Guid> GetIntersectIds(
+            string entity, string filterAttribute, Guid filterValue, string resultAttribute)
+        {
+            var query = new QueryExpression(entity)
+            {
+                ColumnSet = new ColumnSet(resultAttribute),
+                Criteria =
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression(filterAttribute, ConditionOperator.Equal, filterValue)
+                    }
+                }
+            };
+
+            return _service.RetrieveMultiple(query).Entities
+                .Select(e => e.GetAttributeValue<Guid>(resultAttribute))
+                .Where(id => id != Guid.Empty)
+                .Distinct()
+                .ToList();
+        }
+
         /// <summary>
         /// Builds a map of entity logical name -> localized display name. Only the
         /// entity-level metadata is requested (no attributes), so this is a light

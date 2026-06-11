@@ -16,7 +16,7 @@ using XrmToolBox.Extensibility.Interfaces;
 
 namespace SecurityRoleViewer
 {
-    public partial class SecurityRoleViewerControl : PluginControlBase, IGitHubPlugin, IHelpPlugin, IStatusBarMessenger
+    public partial class SecurityRoleViewerControl : PluginControlBase, IGitHubPlugin, IHelpPlugin, IStatusBarMessenger, IRoleViewerHost
     {
         private SecurityRoleService _roleService;
         private List<Entity> _allRoles;
@@ -65,8 +65,18 @@ namespace SecurityRoleViewer
             BuildLevelFilterMenu();
             BuildColumnFilterMenu();
             BuildCompareMenu();
+            utrControl.Host = this;
             Load += SecurityRoleViewerControl_Load;
         }
+
+        // --- IRoleViewerHost: lets the hosted User/Team Roles tab reuse the
+        //     plugin's connection and async/error plumbing.
+        IOrganizationService IRoleViewerHost.Service => Service;
+
+        void IRoleViewerHost.RunWork(WorkAsyncInfo info) => WorkAsync(info);
+
+        void IRoleViewerHost.ShowError(Exception error, string context)
+            => ShowErrorDialog(error, context);
 
         private void SecurityRoleViewerControl_Load(object sender, EventArgs e)
         {
@@ -355,6 +365,7 @@ namespace SecurityRoleViewer
             string actionName, object parameter)
         {
             base.UpdateConnection(newService, detail, actionName, parameter);
+            utrControl.Reset();
             LoadBusinessUnits();
         }
 
@@ -398,6 +409,9 @@ namespace SecurityRoleViewer
             }
 
             tsddBusinessUnits.Enabled = tsddBusinessUnits.DropDownItems.Count > 0;
+
+            // Share the same BU list with the User/Team Roles tab.
+            utrControl.SetBusinessUnits(businessUnits);
         }
 
         private List<Guid> GetCheckedBusinessUnitIds()
