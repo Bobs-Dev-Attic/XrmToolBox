@@ -43,6 +43,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Plugin.cs" />
+    <Compile Include="PluginImages.cs" />
     <Compile Include="NativeMethods.cs" />
     <Compile Include="IRoleViewerHost.cs" />
     <Compile Include="PrivilegeMatrixTabsControl.cs">
