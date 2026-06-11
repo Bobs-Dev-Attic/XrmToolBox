@@ -17,53 +17,108 @@ namespace DataDictionaryBuilder.Services
             _service = service;
         }
 
-        public DictionaryDocument Build(bool customOnly, bool includeSystemAttributes)
+        /// <summary>Fast, lightweight entity list (entity-level metadata only).</summary>
+        public List<EntityListItem> GetEntities(bool customOnly)
         {
             var request = new RetrieveAllEntitiesRequest
             {
-                EntityFilters = EntityFilters.Entity | EntityFilters.Attributes | EntityFilters.Relationships,
+                EntityFilters = EntityFilters.Entity,
                 RetrieveAsIfPublished = true
             };
 
             var response = (RetrieveAllEntitiesResponse)_service.Execute(request);
-            var entities = response.EntityMetadata
-                .Where(e => !customOnly || e.IsCustomEntity == true)
+            return response.EntityMetadata
                 .Where(e => !string.IsNullOrEmpty(e.LogicalName))
-                .OrderBy(e => Label(e.DisplayName, e.LogicalName))
+                .Where(e => !customOnly || e.IsCustomEntity == true)
+                .Select(e => new EntityListItem
+                {
+                    LogicalName = e.LogicalName,
+                    DisplayName = Label(e.DisplayName, e.LogicalName),
+                    IsCustom = e.IsCustomEntity == true
+                })
+                .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
 
-            var includedNames = new HashSet<string>(entities.Select(e => e.LogicalName), StringComparer.OrdinalIgnoreCase);
-            var document = new DictionaryDocument();
-
-            foreach (var entity in entities)
+        /// <summary>Full metadata for one entity, loaded on demand when it is checked.</summary>
+        public EntityDetail GetEntityDetail(string logicalName, bool includeSystemAttributes)
+        {
+            var request = new RetrieveEntityRequest
             {
-                var entityDoc = new EntityDocumentation
-                {
-                    LogicalName = entity.LogicalName,
-                    DisplayName = Label(entity.DisplayName, entity.LogicalName),
-                    SchemaName = entity.SchemaName,
-                    Description = Label(entity.Description, string.Empty),
-                    OwnershipType = entity.OwnershipType?.ToString() ?? string.Empty,
-                    IsCustomEntity = entity.IsCustomEntity == true,
-                    IsIntersect = entity.IsIntersect == true,
-                    PrimaryIdAttribute = entity.PrimaryIdAttribute,
-                    PrimaryNameAttribute = entity.PrimaryNameAttribute
-                };
+                LogicalName = logicalName,
+                EntityFilters = EntityFilters.Entity | EntityFilters.Attributes | EntityFilters.Relationships,
+                RetrieveAsIfPublished = true
+            };
 
-                foreach (var attribute in entity.Attributes
-                    .Where(a => includeSystemAttributes || a.IsCustomAttribute == true || a.IsPrimaryId == true || a.IsPrimaryName == true)
-                    .Where(a => !string.IsNullOrEmpty(a.LogicalName))
-                    .OrderBy(a => Label(a.DisplayName, a.LogicalName)))
-                {
-                    entityDoc.Attributes.Add(BuildAttribute(entity, attribute));
-                }
+            var entity = ((RetrieveEntityResponse)_service.Execute(request)).EntityMetadata;
 
-                document.Entities.Add(entityDoc);
-                AddRelationships(document.Relationships, entity, includedNames);
+            var entityDoc = new EntityDocumentation
+            {
+                LogicalName = entity.LogicalName,
+                DisplayName = Label(entity.DisplayName, entity.LogicalName),
+                SchemaName = entity.SchemaName,
+                Description = Label(entity.Description, string.Empty),
+                OwnershipType = entity.OwnershipType?.ToString() ?? string.Empty,
+                IsCustomEntity = entity.IsCustomEntity == true,
+                IsIntersect = entity.IsIntersect == true,
+                PrimaryIdAttribute = entity.PrimaryIdAttribute,
+                PrimaryNameAttribute = entity.PrimaryNameAttribute
+            };
+
+            foreach (var attribute in (entity.Attributes ?? new AttributeMetadata[0])
+                .Where(a => includeSystemAttributes || a.IsCustomAttribute == true || a.IsPrimaryId == true || a.IsPrimaryName == true)
+                .Where(a => !string.IsNullOrEmpty(a.LogicalName))
+                .OrderBy(a => Label(a.DisplayName, a.LogicalName), StringComparer.OrdinalIgnoreCase))
+            {
+                entityDoc.Attributes.Add(BuildAttribute(entity, attribute));
             }
 
-            document.Relationships.Sort((left, right) => string.Compare(left.SchemaName, right.SchemaName, StringComparison.OrdinalIgnoreCase));
-            return document;
+            return new EntityDetail
+            {
+                Entity = entityDoc,
+                Relationships = BuildRelationships(entity)
+            };
+        }
+
+        // Every 1:N, N:1, and N:N relationship the entity participates in.
+        private static List<RelationshipDocumentation> BuildRelationships(EntityMetadata entity)
+        {
+            var list = new List<RelationshipDocumentation>();
+
+            foreach (var r in entity.OneToManyRelationships ?? Enumerable.Empty<OneToManyRelationshipMetadata>())
+                list.Add(new RelationshipDocumentation
+                {
+                    SchemaName = r.SchemaName,
+                    RelationshipType = "One-to-many",
+                    ReferencingEntity = r.ReferencingEntity,
+                    ReferencingAttribute = r.ReferencingAttribute,
+                    ReferencedEntity = r.ReferencedEntity,
+                    ReferencedAttribute = r.ReferencedAttribute
+                });
+
+            foreach (var r in entity.ManyToOneRelationships ?? Enumerable.Empty<OneToManyRelationshipMetadata>())
+                list.Add(new RelationshipDocumentation
+                {
+                    SchemaName = r.SchemaName,
+                    RelationshipType = "Many-to-one",
+                    ReferencingEntity = r.ReferencingEntity,
+                    ReferencingAttribute = r.ReferencingAttribute,
+                    ReferencedEntity = r.ReferencedEntity,
+                    ReferencedAttribute = r.ReferencedAttribute
+                });
+
+            foreach (var r in entity.ManyToManyRelationships ?? Enumerable.Empty<ManyToManyRelationshipMetadata>())
+                list.Add(new RelationshipDocumentation
+                {
+                    SchemaName = r.SchemaName,
+                    RelationshipType = "Many-to-many",
+                    Entity1LogicalName = r.Entity1LogicalName,
+                    Entity2LogicalName = r.Entity2LogicalName,
+                    IntersectEntityName = r.IntersectEntityName
+                });
+
+            list.Sort((a, b) => string.Compare(a.SchemaName, b.SchemaName, StringComparison.OrdinalIgnoreCase));
+            return list;
         }
 
         private static AttributeDocumentation BuildAttribute(EntityMetadata entity, AttributeMetadata attribute)
@@ -91,48 +146,6 @@ namespace DataDictionaryBuilder.Services
                 Targets = lookupAttribute?.Targets == null ? string.Empty : string.Join(", ", lookupAttribute.Targets),
                 Options = GetOptions(attribute)
             };
-        }
-
-        private static void AddRelationships(
-            List<RelationshipDocumentation> relationships,
-            EntityMetadata entity,
-            HashSet<string> includedNames)
-        {
-            foreach (var relationship in entity.ManyToOneRelationships ?? Enumerable.Empty<OneToManyRelationshipMetadata>())
-            {
-                if (!includedNames.Contains(relationship.ReferencingEntity)
-                    || !includedNames.Contains(relationship.ReferencedEntity))
-                    continue;
-
-                relationships.Add(new RelationshipDocumentation
-                {
-                    SchemaName = relationship.SchemaName,
-                    RelationshipType = "Many-to-one",
-                    ReferencingEntity = relationship.ReferencingEntity,
-                    ReferencingAttribute = relationship.ReferencingAttribute,
-                    ReferencedEntity = relationship.ReferencedEntity,
-                    ReferencedAttribute = relationship.ReferencedAttribute
-                });
-            }
-
-            foreach (var relationship in entity.ManyToManyRelationships ?? Enumerable.Empty<ManyToManyRelationshipMetadata>())
-            {
-                if (!string.Equals(relationship.Entity1LogicalName, entity.LogicalName, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (!includedNames.Contains(relationship.Entity1LogicalName)
-                    || !includedNames.Contains(relationship.Entity2LogicalName))
-                    continue;
-
-                relationships.Add(new RelationshipDocumentation
-                {
-                    SchemaName = relationship.SchemaName,
-                    RelationshipType = "Many-to-many",
-                    Entity1LogicalName = relationship.Entity1LogicalName,
-                    Entity2LogicalName = relationship.Entity2LogicalName,
-                    IntersectEntityName = relationship.IntersectEntityName
-                });
-            }
         }
 
         private static string GetOptions(AttributeMetadata attribute)
