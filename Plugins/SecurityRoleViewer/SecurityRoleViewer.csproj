@@ -44,6 +44,7 @@
   <ItemGroup>
     <Compile Include="Plugin.cs" />
     <Compile Include="NativeMethods.cs" />
+    <Compile Include="Rendering\MatrixRendering.cs" />
     <Compile Include="Models\RolePrivilegeInfo.cs" />
     <Compile Include="Services\SecurityRoleService.cs" />
     <Compile Include="Export\CsvExporter.cs" />

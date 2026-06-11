@@ -1,6 +1,7 @@
 using McTools.Xrm.Connection;
 using Microsoft.Xrm.Sdk;
 using SecurityRoleViewer.Export;
+using SecurityRoleViewer.Rendering;
 using SecurityRoleViewer.Models;
 using SecurityRoleViewer.Services;
 using System;
@@ -17,18 +18,6 @@ namespace SecurityRoleViewer
 {
     public partial class SecurityRoleViewerControl : PluginControlBase, IGitHubPlugin, IHelpPlugin, IStatusBarMessenger
     {
-        private static readonly string[] PrivilegeColumns =
-            { "Create", "Read", "Write", "Delete", "Append", "AppendTo", "Assign", "Share" };
-
-        private static readonly (int Depth, string Label)[] AccessLevels =
-        {
-            (8, "Organization"),
-            (4, "Parent-Child BU"),
-            (2, "Business Unit"),
-            (1, "User"),
-            (0, "None")
-        };
-
         private SecurityRoleService _roleService;
         private List<Entity> _allRoles;
         private Dictionary<string, string> _entityDisplayNames
@@ -38,7 +27,7 @@ namespace SecurityRoleViewer
         private readonly Dictionary<int, ToolStripMenuItem> _levelMenuItems
             = new Dictionary<int, ToolStripMenuItem>();
         private readonly ToolStripMenuItem[] _columnMenuItems
-            = new ToolStripMenuItem[PrivilegeColumns.Length];
+            = new ToolStripMenuItem[MatrixRendering.PrivilegeColumns.Length];
 
         // Entity column shows display names by default; the toolbar toggle flips
         // this to show logical names instead (the other name moves to the tooltip).
@@ -93,7 +82,7 @@ namespace SecurityRoleViewer
 
         private void BuildLevelFilterMenu()
         {
-            foreach (var level in AccessLevels)
+            foreach (var level in MatrixRendering.AccessLevels)
             {
                 var item = new ToolStripMenuItem(level.Label)
                 {
@@ -109,9 +98,9 @@ namespace SecurityRoleViewer
 
         private void BuildColumnFilterMenu()
         {
-            for (int c = 0; c < PrivilegeColumns.Length; c++)
+            for (int c = 0; c < MatrixRendering.PrivilegeColumns.Length; c++)
             {
-                var item = new ToolStripMenuItem(ColumnLabel(PrivilegeColumns[c]))
+                var item = new ToolStripMenuItem(MatrixRendering.ColumnLabel(MatrixRendering.PrivilegeColumns[c]))
                 {
                     Checked = true,
                     CheckOnClick = true,
@@ -122,9 +111,6 @@ namespace SecurityRoleViewer
                 tsddColumns.DropDownItems.Add(item);
             }
         }
-
-        private static string ColumnLabel(string privilegeType)
-            => privilegeType == "AppendTo" ? "Append To" : privilegeType;
 
         private static string CompareModeLabel(CompareMode mode)
         {
@@ -350,8 +336,8 @@ namespace SecurityRoleViewer
 
         private bool[] GetVisibleColumns()
         {
-            var visible = new bool[PrivilegeColumns.Length];
-            for (int c = 0; c < PrivilegeColumns.Length; c++)
+            var visible = new bool[MatrixRendering.PrivilegeColumns.Length];
+            for (int c = 0; c < MatrixRendering.PrivilegeColumns.Length; c++)
                 visible[c] = _columnMenuItems[c].Checked;
             return visible;
         }
@@ -681,9 +667,11 @@ namespace SecurityRoleViewer
                     Tag = roleId
                 };
 
-                var rows = BuildEntityRows(privileges, keyword, visibleDepths, visibleColumns);
+                var rows = MatrixRendering.BuildEntityRows(
+                    privileges, keyword, visibleDepths, visibleColumns, ResolveDisplayName);
 
-                var grid = CreateMatrixGrid(rows, visibleColumns);
+                var grid = MatrixRendering.CreateMatrixGrid(
+                    rows, visibleColumns, _showLogicalNames, GetCompareHighlight);
                 grid.Dock = DockStyle.Fill;
                 grid.ScrollBars = ScrollBars.Both;
                 grid.Tag = roleId;
@@ -701,65 +689,6 @@ namespace SecurityRoleViewer
             UpdateComparisonState();
         }
 
-        private List<EntityRow> BuildEntityRows(
-            List<RolePrivilegeInfo> privileges, string keyword,
-            HashSet<int> visibleDepths, bool[] visibleColumns)
-        {
-            var rows = new List<EntityRow>();
-
-            var entityGroups = privileges
-                .Where(p => !string.IsNullOrEmpty(p.EntityName))
-                .GroupBy(p => p.EntityName)
-                .OrderBy(g => ResolveDisplayName(g.Key), StringComparer.OrdinalIgnoreCase);
-
-            foreach (var group in entityGroups)
-            {
-                var logicalName = group.Key;
-                var displayName = ResolveDisplayName(logicalName);
-
-                // Match the keyword against both the display name and the logical
-                // name so either spelling finds the entity.
-                if (keyword.Length > 0
-                    && displayName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0
-                    && logicalName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0)
-                    continue;
-
-                var byType = group
-                    .GroupBy(p => p.PrivilegeType)
-                    .ToDictionary(g => g.Key, g => g.Max(p => p.Depth));
-
-                var depths = new int[PrivilegeColumns.Length];
-                bool anyVisible = false;
-                for (int c = 0; c < PrivilegeColumns.Length; c++)
-                {
-                    int depth = byType.TryGetValue(PrivilegeColumns[c], out var d) ? d : 0;
-                    if (visibleDepths.Contains(depth))
-                    {
-                        depths[c] = depth;
-                        // A row is kept only if it has a visible cell in a visible column.
-                        if (visibleColumns[c])
-                            anyVisible = true;
-                    }
-                    else
-                    {
-                        depths[c] = -1; // hidden by level filter
-                    }
-                }
-
-                if (!anyVisible)
-                    continue;
-
-                rows.Add(new EntityRow
-                {
-                    EntityName = logicalName,
-                    DisplayName = displayName,
-                    Depths = depths
-                });
-            }
-
-            return rows;
-        }
-
         private string ResolveDisplayName(string logicalName)
         {
             if (!string.IsNullOrEmpty(logicalName)
@@ -768,155 +697,6 @@ namespace SecurityRoleViewer
                 return displayName;
 
             return logicalName;
-        }
-
-        private DataGridView CreateMatrixGrid(List<EntityRow> entityRows, bool[] visibleColumns)
-        {
-            var grid = new DataGridView
-            {
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
-                DefaultCellStyle = { SelectionBackColor = Color.White, SelectionForeColor = Color.Black },
-                BackgroundColor = Color.White,
-                BorderStyle = BorderStyle.FixedSingle,
-                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-                GridColor = Color.FromArgb(230, 230, 230)
-            };
-
-            var entityCol = new DataGridViewTextBoxColumn
-            {
-                HeaderText = "Entity",
-                Name = "colEntity",
-                Width = 180,
-                SortMode = DataGridViewColumnSortMode.Automatic
-            };
-            grid.Columns.Add(entityCol);
-
-            // Only build the privilege columns the user has chosen to show; keep
-            // the original column index so cell values map back to the depth array.
-            var columnMap = new List<int>();
-            for (int c = 0; c < PrivilegeColumns.Length; c++)
-            {
-                if (!visibleColumns[c])
-                    continue;
-
-                var col = new DataGridViewTextBoxColumn
-                {
-                    HeaderText = ColumnLabel(PrivilegeColumns[c]),
-                    Name = "col" + PrivilegeColumns[c],
-                    Width = 65,
-                    SortMode = DataGridViewColumnSortMode.Automatic,
-                    DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter }
-                };
-                grid.Columns.Add(col);
-                columnMap.Add(c);
-            }
-
-            foreach (var entityRow in entityRows)
-            {
-                var row = new DataGridViewRow();
-                row.CreateCells(grid);
-                // Logical name on the row backs cross-role comparison lookups.
-                row.Tag = entityRow.EntityName;
-                // The toggle decides which name fills the cell; the other one moves
-                // to the tooltip so both are always reachable.
-                if (_showLogicalNames)
-                {
-                    row.Cells[0].Value = entityRow.EntityName;
-                    row.Cells[0].ToolTipText = "Display name: " + entityRow.DisplayName;
-                }
-                else
-                {
-                    row.Cells[0].Value = entityRow.DisplayName;
-                    row.Cells[0].ToolTipText = "Logical name: " + entityRow.EntityName;
-                }
-
-                for (int k = 0; k < columnMap.Count; k++)
-                    row.Cells[k + 1].Value = entityRow.Depths[columnMap[k]];
-
-                grid.Rows.Add(row);
-            }
-
-            grid.CellPainting += MatrixGrid_CellPainting;
-            return grid;
-        }
-
-        private void MatrixGrid_CellPainting(object sender, DataGridViewCellPaintingEventArgs e)
-        {
-            if (e.RowIndex < 0 || e.ColumnIndex < 1) return;
-            if (!(e.Value is int depth)) return;
-
-            // When a comparison mode is active, tint qualifying cells of the
-            // checked tabs; otherwise paint the normal cell background.
-            var highlight = depth >= 0
-                ? GetCompareHighlight(sender as DataGridView, e.RowIndex, e.ColumnIndex, depth)
-                : null;
-
-            if (highlight.HasValue)
-            {
-                using (var fill = new SolidBrush(highlight.Value))
-                    e.Graphics.FillRectangle(fill, e.CellBounds);
-                e.Paint(e.CellBounds, DataGridViewPaintParts.Border);
-            }
-            else
-            {
-                e.Paint(e.CellBounds, DataGridViewPaintParts.Background | DataGridViewPaintParts.Border);
-            }
-
-            // -1 is a level filtered out of view: leave the cell blank.
-            if (depth < 0)
-            {
-                e.Handled = true;
-                return;
-            }
-
-            int size = 15;
-            int x = e.CellBounds.X + (e.CellBounds.Width - size) / 2;
-            int y = e.CellBounds.Y + (e.CellBounds.Height - size) / 2;
-            var rect = new Rectangle(x, y, size, size);
-
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-
-            // Native Dataverse access-level icons are "pie clock" glyphs: the
-            // colored wedge grows with the access level (none -> org). The start
-            // angle is offset per level to match the native icon orientation.
-            Color color;
-            float sweep;
-            float start;
-            switch (depth)
-            {
-                case 1:  color = Color.FromArgb(237, 162, 0);  sweep = 90f;  start = 0f; break;   // User - amber, +60 CW
-                case 2:  color = Color.FromArgb(240, 199, 0);  sweep = 180f; start = 0f;   break;   // Business Unit - gold, +90 CW
-                case 4:  color = Color.FromArgb(76, 175, 80);  sweep = 270f; start = -75f; break;   // Parent-Child BU - green, +15 CW
-                case 8:  color = Color.FromArgb(46, 155, 50);  sweep = 360f; start = -90f; break;   // Organization - full green
-                default: color = Color.FromArgb(200, 70, 70);  sweep = 0f;   start = -90f; break;   // None - red ring
-            }
-
-            // White base so partially-filled wedges read as a pie chart.
-            using (var baseBrush = new SolidBrush(Color.White))
-                e.Graphics.FillEllipse(baseBrush, rect);
-
-            if (sweep >= 360f)
-            {
-                using (var brush = new SolidBrush(color))
-                    e.Graphics.FillEllipse(brush, rect);
-            }
-            else if (sweep > 0f)
-            {
-                using (var brush = new SolidBrush(color))
-                    e.Graphics.FillPie(brush, rect, start, sweep);
-            }
-
-            // Colored outline ring around the whole glyph.
-            using (var pen = new Pen(color, 1.4f))
-                e.Graphics.DrawEllipse(pen, rect);
-
-            e.Handled = true;
         }
 
         private void tstSearch_TextChanged(object sender, EventArgs e)
@@ -1013,13 +793,6 @@ namespace SecurityRoleViewer
             }
 
             public override string ToString() => _displayName;
-        }
-
-        private class EntityRow
-        {
-            public string EntityName { get; set; }
-            public string DisplayName { get; set; }
-            public int[] Depths { get; set; }
         }
 
         private class LoadResult
