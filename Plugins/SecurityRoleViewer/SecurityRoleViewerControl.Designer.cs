@@ -108,6 +108,8 @@ namespace SecurityRoleViewer
             this.splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.splitContainer1.Location = new System.Drawing.Point(0, 25);
             this.splitContainer1.Name = "splitContainer1";
+            // Explicit width so SplitterDistance validates during InitializeComponent.
+            this.splitContainer1.Size = new System.Drawing.Size(900, 525);
             this.splitContainer1.Panel1MinSize = 120;
             this.splitContainer1.SplitterDistance = 180;
 

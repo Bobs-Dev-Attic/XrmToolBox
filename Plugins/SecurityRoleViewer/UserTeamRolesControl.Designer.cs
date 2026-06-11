@@ -25,6 +25,7 @@ namespace SecurityRoleViewer
             this.tsddStatus = new System.Windows.Forms.ToolStripDropDownButton();
             this.tsddLicensed = new System.Windows.Forms.ToolStripDropDownButton();
             this.tsddTeamsFilter = new System.Windows.Forms.ToolStripDropDownButton();
+            this.tsddGroupBy = new System.Windows.Forms.ToolStripDropDownButton();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.lvPrincipals = new System.Windows.Forms.ListView();
             this.colPrincipal = new System.Windows.Forms.ColumnHeader();
@@ -47,7 +48,8 @@ namespace SecurityRoleViewer
                 this.tstUserSearch,
                 this.tsddStatus,
                 this.tsddLicensed,
-                this.tsddTeamsFilter
+                this.tsddTeamsFilter,
+                this.tsddGroupBy
             });
             this.toolStrip1.Location = new System.Drawing.Point(0, 0);
             this.toolStrip1.Name = "toolStrip1";
@@ -97,12 +99,24 @@ namespace SecurityRoleViewer
             this.tsddTeamsFilter.Enabled = false;
             this.tsddTeamsFilter.ToolTipText = "Show only users who belong to the checked teams";
 
+            // tsddGroupBy
+            this.tsddGroupBy.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.tsddGroupBy.Name = "tsddGroupBy";
+            this.tsddGroupBy.Text = "Group: Status";
+            this.tsddGroupBy.ShowDropDownArrow = true;
+            this.tsddGroupBy.ToolTipText = "Group users by status or team membership";
+
             // splitContainer1
             this.splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.splitContainer1.Location = new System.Drawing.Point(0, 25);
             this.splitContainer1.Name = "splitContainer1";
+            // Explicit width so SplitterDistance validates during InitializeComponent
+            // even before the control is laid out (Panel1MinSize + Panel2MinSize = 420).
+            this.splitContainer1.Size = new System.Drawing.Size(900, 525);
             this.splitContainer1.Panel1MinSize = 120;
+            this.splitContainer1.Panel2MinSize = 300;
             this.splitContainer1.SplitterDistance = 180;
+            this.splitContainer1.Resize += new System.EventHandler(this.splitContainer1_Resize);
 
             // lvPrincipals (Panel1)
             this.lvPrincipals.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -156,6 +170,7 @@ namespace SecurityRoleViewer
         private System.Windows.Forms.ToolStripDropDownButton tsddStatus;
         private System.Windows.Forms.ToolStripDropDownButton tsddLicensed;
         private System.Windows.Forms.ToolStripDropDownButton tsddTeamsFilter;
+        private System.Windows.Forms.ToolStripDropDownButton tsddGroupBy;
         private System.Windows.Forms.SplitContainer splitContainer1;
         private System.Windows.Forms.ListView lvPrincipals;
         private System.Windows.Forms.ColumnHeader colPrincipal;

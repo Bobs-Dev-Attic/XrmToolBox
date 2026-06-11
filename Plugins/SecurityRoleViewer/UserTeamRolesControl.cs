@@ -19,6 +19,7 @@ namespace SecurityRoleViewer
         private enum PrincipalKind { User, Team }
         private enum StatusFilter { Enabled, Disabled, All }
         private enum LicenseFilter { All, Licensed, Unlicensed }
+        private enum UserGroupMode { Status, Teams }
 
         private sealed class PrincipalItem
         {
@@ -34,6 +35,18 @@ namespace SecurityRoleViewer
             }
         }
 
+        private sealed class PrincipalSelection
+        {
+            public PrincipalItem Principal { get; }
+            public List<RolePrivilegeInfo> Privileges { get; }
+
+            public PrincipalSelection(PrincipalItem principal, List<RolePrivilegeInfo> privileges)
+            {
+                Principal = principal;
+                Privileges = privileges ?? new List<RolePrivilegeInfo>();
+            }
+        }
+
         private IRoleViewerHost _host;
         private SecurityRoleService _service;
         private Dictionary<string, string> _entityDisplayNames
@@ -43,13 +56,15 @@ namespace SecurityRoleViewer
         private List<Entity> _allTeams = new List<Entity>();
         // userId -> team ids the user belongs to (for the Teams membership filter).
         private Dictionary<Guid, HashSet<Guid>> _userTeams = new Dictionary<Guid, HashSet<Guid>>();
+        private Dictionary<Guid, string> _teamNames = new Dictionary<Guid, string>();
 
         // Effective privileges per checked principal; feeds the matrix tabs.
-        private readonly Dictionary<Guid, List<RolePrivilegeInfo>> _principalPrivileges
-            = new Dictionary<Guid, List<RolePrivilegeInfo>>();
+        private readonly Dictionary<Guid, PrincipalSelection> _selectedPrincipals
+            = new Dictionary<Guid, PrincipalSelection>();
 
         private StatusFilter _statusFilter = StatusFilter.Enabled;
         private LicenseFilter _licenseFilter = LicenseFilter.All;
+        private UserGroupMode _groupMode = UserGroupMode.Status;
         private bool _suppressCheck;
 
         public UserTeamRolesControl()
@@ -57,6 +72,7 @@ namespace SecurityRoleViewer
             InitializeComponent();
             BuildStatusMenu();
             BuildLicensedMenu();
+            BuildGroupMenu();
             Load += (s, e) => ApplySplit();
         }
 
@@ -70,11 +86,13 @@ namespace SecurityRoleViewer
         {
             // Left list ~20%, matrix ~80%.
             var target = (int)(splitContainer1.Width * 0.2);
-            if (target >= splitContainer1.Panel1MinSize
-                && target <= splitContainer1.Width - splitContainer1.Panel2MinSize)
-            {
-                splitContainer1.SplitterDistance = target;
-            }
+            var max = splitContainer1.Width - splitContainer1.Panel2MinSize;
+            if (max <= splitContainer1.Panel1MinSize)
+                return;
+
+            splitContainer1.SplitterDistance = Math.Max(
+                splitContainer1.Panel1MinSize,
+                Math.Min(target, max));
         }
 
         // ---- connection / business units --------------------------------------
@@ -107,7 +125,8 @@ namespace SecurityRoleViewer
             _allUsers = new List<Entity>();
             _allTeams = new List<Entity>();
             _userTeams = new Dictionary<Guid, HashSet<Guid>>();
-            _principalPrivileges.Clear();
+            _teamNames = new Dictionary<Guid, string>();
+            _selectedPrincipals.Clear();
 
             tsddTeamsFilter.DropDownItems.Clear();
             tsddTeamsFilter.Enabled = false;
@@ -185,7 +204,8 @@ namespace SecurityRoleViewer
                     _allUsers = result.Users;
                     _allTeams = result.Teams;
                     _userTeams = BuildUserTeamMap(result.Memberships);
-                    _principalPrivileges.Clear();
+                    _teamNames = BuildTeamNameMap(_allTeams);
+                    _selectedPrincipals.Clear();
 
                     PopulateTeamsFilter();
                     RefilterPrincipals();
@@ -206,6 +226,21 @@ namespace SecurityRoleViewer
                 if (!map.TryGetValue(userId, out var teams))
                     map[userId] = teams = new HashSet<Guid>();
                 teams.Add(teamId);
+            }
+            return map;
+        }
+
+        private static Dictionary<Guid, string> BuildTeamNameMap(List<Entity> teams)
+        {
+            var map = new Dictionary<Guid, string>();
+            foreach (var team in teams)
+            {
+                var id = team.GetAttributeValue<Guid>("teamid");
+                if (id == Guid.Empty)
+                    continue;
+
+                var name = team.GetAttributeValue<string>("name");
+                map[id] = string.IsNullOrEmpty(name) ? id.ToString() : name;
             }
             return map;
         }
@@ -247,7 +282,7 @@ namespace SecurityRoleViewer
             var keyword = tstUserSearch.Text?.Trim() ?? "";
             var teamFilter = GetCheckedTeamFilterIds();
 
-            var userItems = new List<ListViewItem>();
+            var groupedUsers = new Dictionary<string, List<ListViewItem>>(StringComparer.OrdinalIgnoreCase);
             foreach (var user in _allUsers)
             {
                 if (!PassesStatus(user) || !PassesLicense(user) || !PassesTeamFilter(user, teamFilter))
@@ -258,7 +293,11 @@ namespace SecurityRoleViewer
                 var id = user.GetAttributeValue<Guid>("systemuserid");
                 var name = user.GetAttributeValue<string>("fullname");
                 if (string.IsNullOrEmpty(name)) name = id.ToString();
-                userItems.Add(MakePrincipalItem(PrincipalKind.User, id, name));
+
+                var groupName = GetUserGroupName(user);
+                if (!groupedUsers.TryGetValue(groupName, out var items))
+                    groupedUsers[groupName] = items = new List<ListViewItem>();
+                items.Add(MakePrincipalItem(PrincipalKind.User, id, name));
             }
 
             var teamItems = new List<ListViewItem>();
@@ -276,7 +315,8 @@ namespace SecurityRoleViewer
             lvPrincipals.Items.Clear();
             lvPrincipals.Groups.Clear();
 
-            AddGroup("Users", userItems);
+            foreach (var groupName in GetOrderedUserGroups(groupedUsers))
+                AddGroup(groupName, groupedUsers[groupName]);
             AddGroup("Teams", teamItems);
 
             ResizePrincipalColumn();
@@ -289,8 +329,51 @@ namespace SecurityRoleViewer
             return new ListViewItem(name)
             {
                 Tag = new PrincipalItem(kind, id, name),
-                Checked = _principalPrivileges.ContainsKey(id)
+                Checked = _selectedPrincipals.ContainsKey(id)
             };
+        }
+
+        private string GetUserGroupName(Entity user)
+        {
+            if (_groupMode == UserGroupMode.Teams)
+                return GetTeamMembershipGroupName(user);
+
+            return user.GetAttributeValue<bool>("isdisabled")
+                ? "Disabled Users"
+                : "Enabled Users";
+        }
+
+        private string GetTeamMembershipGroupName(Entity user)
+        {
+            var userId = user.GetAttributeValue<Guid>("systemuserid");
+            if (!_userTeams.TryGetValue(userId, out var teams) || teams.Count == 0)
+                return "Users with No Team";
+
+            var names = teams
+                .Select(id => _teamNames.TryGetValue(id, out var name) ? name : id.ToString())
+                .Where(name => !string.IsNullOrEmpty(name))
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (names.Count == 1)
+                return "Team: " + names[0];
+
+            return "Users in Multiple Teams";
+        }
+
+        private IEnumerable<string> GetOrderedUserGroups(Dictionary<string, List<ListViewItem>> groupedUsers)
+        {
+            if (_groupMode == UserGroupMode.Status)
+            {
+                if (groupedUsers.ContainsKey("Enabled Users"))
+                    yield return "Enabled Users";
+                if (groupedUsers.ContainsKey("Disabled Users"))
+                    yield return "Disabled Users";
+                yield break;
+            }
+
+            foreach (var groupName in groupedUsers.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+                yield return groupName;
         }
 
         private void AddGroup(string header, List<ListViewItem> items)
@@ -355,7 +438,7 @@ namespace SecurityRoleViewer
 
             if (e.Item.Checked)
             {
-                if (_principalPrivileges.ContainsKey(principal.Id))
+                if (_selectedPrincipals.ContainsKey(principal.Id))
                 {
                     RefreshSources();
                     return;
@@ -377,16 +460,20 @@ namespace SecurityRoleViewer
                         if (args.Error != null)
                         {
                             _host.ShowError(args.Error, "Loading Effective Privileges");
+                            _suppressCheck = true;
+                            e.Item.Checked = false;
+                            _suppressCheck = false;
                             return;
                         }
-                        _principalPrivileges[principal.Id] = (List<RolePrivilegeInfo>)args.Result;
+                        _selectedPrincipals[principal.Id] = new PrincipalSelection(
+                            principal, (List<RolePrivilegeInfo>)args.Result);
                         RefreshSources();
                     }
                 });
             }
             else
             {
-                _principalPrivileges.Remove(principal.Id);
+                _selectedPrincipals.Remove(principal.Id);
                 RefreshSources();
             }
         }
@@ -394,12 +481,10 @@ namespace SecurityRoleViewer
         private void RefreshSources()
         {
             var sources = new List<MatrixSource>();
-            foreach (ListViewItem lvItem in lvPrincipals.CheckedItems)
-            {
-                var principal = lvItem.Tag as PrincipalItem;
-                if (principal != null && _principalPrivileges.TryGetValue(principal.Id, out var privs))
-                    sources.Add(new MatrixSource(principal.Id, principal.Name, privs));
-            }
+            foreach (var selection in _selectedPrincipals.Values.OrderBy(s => s.Principal.Name))
+                sources.Add(new MatrixSource(
+                    selection.Principal.Id, selection.Principal.Name, selection.Privileges));
+
             matrixPanel.SetSources(sources, ResolveDisplayName);
         }
 
@@ -459,6 +544,15 @@ namespace SecurityRoleViewer
             tsddLicensed.Text = "Licensed: All";
         }
 
+        private void BuildGroupMenu()
+        {
+            AddRadioItem(tsddGroupBy, "Status", UserGroupMode.Status, _groupMode,
+                v => { _groupMode = (UserGroupMode)v; });
+            AddRadioItem(tsddGroupBy, "Teams", UserGroupMode.Teams, _groupMode,
+                v => { _groupMode = (UserGroupMode)v; });
+            tsddGroupBy.Text = "Group: Status";
+        }
+
         // Adds one mutually-exclusive option to a dropdown; on click it updates the
         // backing field (via apply), re-checks siblings, relabels, and refilters.
         private void AddRadioItem(
@@ -474,7 +568,15 @@ namespace SecurityRoleViewer
                 apply(value);
                 foreach (ToolStripMenuItem sibling in button.DropDownItems)
                     sibling.Checked = sibling == item;
-                button.Text = (button == tsddStatus ? "Status: " : "Licensed: ") + label;
+                string prefix;
+                if (button == tsddStatus)
+                    prefix = "Status: ";
+                else if (button == tsddLicensed)
+                    prefix = "Licensed: ";
+                else
+                    prefix = "Group: ";
+
+                button.Text = prefix + label;
                 RefilterPrincipals();
             };
             button.DropDownItems.Add(item);
@@ -491,6 +593,11 @@ namespace SecurityRoleViewer
         private void lvPrincipals_Resize(object sender, EventArgs e)
         {
             ResizePrincipalColumn();
+        }
+
+        private void splitContainer1_Resize(object sender, EventArgs e)
+        {
+            ApplySplit();
         }
 
         private sealed class LoadResult
