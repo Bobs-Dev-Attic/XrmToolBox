@@ -1,3 +1,4 @@
+using McTools.Xrm.Connection;
 using Microsoft.Xrm.Sdk;
 using SecurityRoleViewer.Export;
 using SecurityRoleViewer.Models;
@@ -361,6 +362,67 @@ namespace SecurityRoleViewer
         public string UserName => "MscrmTools";
         public string HelpUrl => "https://github.com/MscrmTools/XrmToolBox";
 
+        // Populate the Business Units dropdown as soon as a connection is available,
+        // so the user can narrow the role load before clicking Load Roles.
+        public override void UpdateConnection(
+            IOrganizationService newService, ConnectionDetail detail,
+            string actionName, object parameter)
+        {
+            base.UpdateConnection(newService, detail, actionName, parameter);
+            LoadBusinessUnits();
+        }
+
+        private void LoadBusinessUnits()
+        {
+            if (Service == null) return;
+
+            var service = new SecurityRoleService(Service);
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Loading business units...",
+                Work = (w, args) => args.Result = service.GetBusinessUnits(),
+                PostWorkCallBack = args =>
+                {
+                    if (args.Error != null)
+                    {
+                        ShowErrorDialog(args.Error, "Loading Business Units");
+                        return;
+                    }
+                    PopulateBusinessUnitMenu((List<Entity>)args.Result);
+                }
+            });
+        }
+
+        private void PopulateBusinessUnitMenu(List<Entity> businessUnits)
+        {
+            tsddBusinessUnits.DropDownItems.Clear();
+
+            foreach (var bu in businessUnits)
+            {
+                var id = bu.GetAttributeValue<Guid>("businessunitid");
+                var name = bu.GetAttributeValue<string>("name");
+
+                var item = new ToolStripMenuItem(string.IsNullOrEmpty(name) ? id.ToString() : name)
+                {
+                    Checked = true,        // all checked by default; a lone BU is checked too
+                    CheckOnClick = true,
+                    Tag = id
+                };
+                tsddBusinessUnits.DropDownItems.Add(item);
+            }
+
+            tsddBusinessUnits.Enabled = tsddBusinessUnits.DropDownItems.Count > 0;
+        }
+
+        private List<Guid> GetCheckedBusinessUnitIds()
+        {
+            var ids = new List<Guid>();
+            foreach (ToolStripMenuItem item in tsddBusinessUnits.DropDownItems)
+                if (item.Checked && item.Tag is Guid id)
+                    ids.Add(id);
+            return ids;
+        }
+
         private void tsbLoadRoles_Click(object sender, EventArgs e)
         {
             ExecuteMethod(LoadRoles);
@@ -371,12 +433,20 @@ namespace SecurityRoleViewer
             _roleService = new SecurityRoleService(Service);
             _loadedPrivileges.Clear();
 
+            // Read the BU selection on the UI thread before the background work.
+            // All-checked (or nothing loaded) means no filter, i.e. load every role.
+            var checkedBuIds = GetCheckedBusinessUnitIds();
+            IList<Guid> buFilter =
+                checkedBuIds.Count == 0 || checkedBuIds.Count == tsddBusinessUnits.DropDownItems.Count
+                    ? null
+                    : checkedBuIds;
+
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Loading security roles...",
                 Work = (w, args) =>
                 {
-                    var roles = _roleService.GetRoles();
+                    var roles = _roleService.GetRoles(buFilter);
 
                     // Resolve entity display names alongside the roles. If the caller
                     // lacks metadata read access we still want the roles to load, so

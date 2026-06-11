@@ -16,6 +16,8 @@ namespace SecurityRoleViewer
         private void InitializeComponent()
         {
             this.toolStrip1 = new System.Windows.Forms.ToolStrip();
+            this.tsddBusinessUnits = new System.Windows.Forms.ToolStripDropDownButton();
+            this.toolStripSeparator6 = new System.Windows.Forms.ToolStripSeparator();
             this.tsbLoadRoles = new System.Windows.Forms.ToolStripButton();
             this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
@@ -51,6 +53,8 @@ namespace SecurityRoleViewer
 
             // toolStrip1
             this.toolStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+                this.tsddBusinessUnits,
+                this.toolStripSeparator6,
                 this.tsbLoadRoles,
                 this.toolStripSeparator1,
                 this.toolStripLabel1,
@@ -61,6 +65,14 @@ namespace SecurityRoleViewer
             this.toolStrip1.Location = new System.Drawing.Point(0, 0);
             this.toolStrip1.Name = "toolStrip1";
             this.toolStrip1.Size = new System.Drawing.Size(900, 25);
+
+            // tsddBusinessUnits
+            this.tsddBusinessUnits.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.tsddBusinessUnits.Name = "tsddBusinessUnits";
+            this.tsddBusinessUnits.Text = "Business Units";
+            this.tsddBusinessUnits.ShowDropDownArrow = true;
+            this.tsddBusinessUnits.Enabled = false;
+            this.tsddBusinessUnits.ToolTipText = "Limit Load Roles to the checked business units";
 
             // tsbLoadRoles
             this.tsbLoadRoles.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -226,6 +238,8 @@ namespace SecurityRoleViewer
         }
 
         private System.Windows.Forms.ToolStrip toolStrip1;
+        private System.Windows.Forms.ToolStripDropDownButton tsddBusinessUnits;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator6;
         private System.Windows.Forms.ToolStripButton tsbLoadRoles;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
         private System.Windows.Forms.ToolStripLabel toolStripLabel1;

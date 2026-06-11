@@ -26,7 +26,7 @@ namespace SecurityRoleViewer.Services
             _service = service;
         }
 
-        public List<Entity> GetRoles()
+        public List<Entity> GetRoles(IList<Guid> businessUnitIds = null)
         {
             var query = new QueryExpression("role")
             {
@@ -34,8 +34,27 @@ namespace SecurityRoleViewer.Services
                 Orders = { new OrderExpression("name", OrderType.Ascending) }
             };
 
+            // Narrow to the chosen business units; an empty/null list loads all.
+            if (businessUnitIds != null && businessUnitIds.Count > 0)
+            {
+                query.Criteria.AddCondition(
+                    "businessunitid", ConditionOperator.In,
+                    businessUnitIds.Cast<object>().ToArray());
+            }
+
             var results = _service.RetrieveMultiple(query);
             return results.Entities.ToList();
+        }
+
+        public List<Entity> GetBusinessUnits()
+        {
+            var query = new QueryExpression("businessunit")
+            {
+                ColumnSet = new ColumnSet("name", "businessunitid"),
+                Orders = { new OrderExpression("name", OrderType.Ascending) }
+            };
+
+            return _service.RetrieveMultiple(query).Entities.ToList();
         }
 
         /// <summary>
