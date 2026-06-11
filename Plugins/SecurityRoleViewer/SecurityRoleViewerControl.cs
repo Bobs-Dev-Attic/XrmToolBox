@@ -24,15 +24,6 @@ namespace SecurityRoleViewer
             = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<Guid, List<RolePrivilegeInfo>> _loadedPrivileges
             = new Dictionary<Guid, List<RolePrivilegeInfo>>();
-        private readonly Dictionary<int, ToolStripMenuItem> _levelMenuItems
-            = new Dictionary<int, ToolStripMenuItem>();
-        private readonly ToolStripMenuItem[] _columnMenuItems
-            = new ToolStripMenuItem[MatrixRendering.PrivilegeColumns.Length];
-
-        // Entity column shows display names by default; the toolbar toggle flips
-        // this to show logical names instead (the other name moves to the tooltip).
-        private bool _showLogicalNames;
-
         // Guards the ListView ItemChecked handler while we repopulate the list, so
         // restoring checkboxes during a rebuild doesn't trigger privilege loads.
         private bool _suppressItemCheck;
@@ -41,30 +32,9 @@ namespace SecurityRoleViewer
         // categories are hidden. See CategorizeRole for the assignment rule.
         private static readonly string[] CategoryOrder = { "Custom", "System", "Core", "Misc" };
 
-        // Cross-role comparison driven by checkboxes on the role tab headers.
-        private enum CompareMode { None, Combined, Same, Different }
-
-        // Role ids whose tabs are checked for comparison; survives tab rebuilds.
-        private readonly HashSet<Guid> _compareRoleIds = new HashSet<Guid>();
-        private CompareMode _compareMode = CompareMode.None;
-
-        // Per "entityLogical|privilegeType" cell, computed over the compared roles:
-        // the highest level granted, and whether every compared role is identical.
-        private readonly Dictionary<string, int> _compareMax
-            = new Dictionary<string, int>();
-        private readonly Dictionary<string, bool> _compareAllEqual
-            = new Dictionary<string, bool>();
-
-        private static readonly Color SameHighlight = Color.FromArgb(208, 240, 208);
-        private static readonly Color DifferentHighlight = Color.FromArgb(252, 232, 196);
-        private static readonly Color CombinedHighlight = Color.FromArgb(205, 226, 250);
-
         public SecurityRoleViewerControl()
         {
             InitializeComponent();
-            BuildLevelFilterMenu();
-            BuildColumnFilterMenu();
-            BuildCompareMenu();
             utrControl.Host = this;
             Load += SecurityRoleViewerControl_Load;
         }
@@ -88,268 +58,6 @@ namespace SecurityRoleViewer
             {
                 splitContainer1.SplitterDistance = target;
             }
-        }
-
-        private void BuildLevelFilterMenu()
-        {
-            foreach (var level in MatrixRendering.AccessLevels)
-            {
-                var item = new ToolStripMenuItem(level.Label)
-                {
-                    Checked = true,
-                    CheckOnClick = true,
-                    Tag = level.Depth
-                };
-                item.CheckedChanged += (s, e) => RebuildMatrixPanel();
-                _levelMenuItems[level.Depth] = item;
-                tsddLevels.DropDownItems.Add(item);
-            }
-        }
-
-        private void BuildColumnFilterMenu()
-        {
-            for (int c = 0; c < MatrixRendering.PrivilegeColumns.Length; c++)
-            {
-                var item = new ToolStripMenuItem(MatrixRendering.ColumnLabel(MatrixRendering.PrivilegeColumns[c]))
-                {
-                    Checked = true,
-                    CheckOnClick = true,
-                    Tag = c
-                };
-                item.CheckedChanged += (s, e) => RebuildMatrixPanel();
-                _columnMenuItems[c] = item;
-                tsddColumns.DropDownItems.Add(item);
-            }
-        }
-
-        private static string CompareModeLabel(CompareMode mode)
-        {
-            switch (mode)
-            {
-                case CompareMode.Combined: return "Combined (max)";
-                case CompareMode.Same: return "Same";
-                case CompareMode.Different: return "Different";
-                default: return "Off";
-            }
-        }
-
-        private void BuildCompareMenu()
-        {
-            var modes = new[]
-            {
-                CompareMode.None, CompareMode.Combined, CompareMode.Same, CompareMode.Different
-            };
-            foreach (var mode in modes)
-            {
-                var item = new ToolStripMenuItem(CompareModeLabel(mode))
-                {
-                    Tag = mode,
-                    Checked = mode == CompareMode.None
-                };
-                item.Click += CompareModeItem_Click;
-                tsddCompare.DropDownItems.Add(item);
-            }
-        }
-
-        private void CompareModeItem_Click(object sender, EventArgs e)
-        {
-            _compareMode = (CompareMode)((ToolStripMenuItem)sender).Tag;
-            foreach (ToolStripMenuItem item in tsddCompare.DropDownItems)
-                item.Checked = (CompareMode)item.Tag == _compareMode;
-
-            tsddCompare.Text = _compareMode == CompareMode.None
-                ? "Compare"
-                : "Compare: " + CompareModeLabel(_compareMode);
-
-            InvalidateMatrixGrids();
-        }
-
-        // Reflects the current comparison selection in the toolbar and recomputes
-        // the highlight data. Called whenever the checked-tab set changes.
-        private void UpdateComparisonState()
-        {
-            bool canCompare = _compareRoleIds.Count >= 2;
-            tsddCompare.Visible = canCompare;
-
-            if (!canCompare && _compareMode != CompareMode.None)
-            {
-                _compareMode = CompareMode.None;
-                foreach (ToolStripMenuItem item in tsddCompare.DropDownItems)
-                    item.Checked = (CompareMode)item.Tag == CompareMode.None;
-                tsddCompare.Text = "Compare";
-            }
-
-            ComputeComparison();
-            InvalidateMatrixGrids();
-        }
-
-        // Builds the per-cell max/all-equal maps across the compared roles, treating
-        // an entity a role doesn't list as None (0).
-        private void ComputeComparison()
-        {
-            _compareMax.Clear();
-            _compareAllEqual.Clear();
-
-            var roleCells = new List<Dictionary<string, int>>();
-            foreach (var roleId in _compareRoleIds)
-            {
-                if (!_loadedPrivileges.TryGetValue(roleId, out var privileges))
-                    continue;
-
-                var cells = new Dictionary<string, int>();
-                foreach (var p in privileges)
-                {
-                    if (string.IsNullOrEmpty(p.EntityName))
-                        continue;
-                    var key = p.EntityName + "|" + p.PrivilegeType;
-                    if (!cells.TryGetValue(key, out var existing) || p.Depth > existing)
-                        cells[key] = p.Depth;
-                }
-                roleCells.Add(cells);
-            }
-
-            if (roleCells.Count < 2)
-                return;
-
-            var allKeys = new HashSet<string>();
-            foreach (var cells in roleCells)
-                foreach (var key in cells.Keys)
-                    allKeys.Add(key);
-
-            foreach (var key in allKeys)
-            {
-                int max = 0;
-                int first = 0;
-                bool firstSet = false;
-                bool allEqual = true;
-
-                foreach (var cells in roleCells)
-                {
-                    int depth = cells.TryGetValue(key, out var d) ? d : 0;
-                    if (!firstSet) { first = depth; firstSet = true; }
-                    else if (depth != first) allEqual = false;
-                    if (depth > max) max = depth;
-                }
-
-                _compareMax[key] = max;
-                _compareAllEqual[key] = allEqual;
-            }
-        }
-
-        // The highlight colour for one privilege cell, or null when comparison is
-        // off, the grid's role isn't selected, or the cell doesn't qualify.
-        private Color? GetCompareHighlight(DataGridView grid, int rowIndex, int colIndex, int depth)
-        {
-            if (_compareMode == CompareMode.None || grid == null)
-                return null;
-            if (!(grid.Tag is Guid roleId) || !_compareRoleIds.Contains(roleId))
-                return null;
-
-            var entity = grid.Rows[rowIndex].Tag as string;
-            if (string.IsNullOrEmpty(entity))
-                return null;
-
-            var columnName = grid.Columns[colIndex].Name ?? "";
-            var privType = columnName.StartsWith("col") ? columnName.Substring(3) : columnName;
-            var key = entity + "|" + privType;
-
-            switch (_compareMode)
-            {
-                case CompareMode.Same:
-                    return _compareAllEqual.TryGetValue(key, out var eqS) && eqS
-                        ? SameHighlight : (Color?)null;
-                case CompareMode.Different:
-                    return _compareAllEqual.TryGetValue(key, out var eqD) && !eqD
-                        ? DifferentHighlight : (Color?)null;
-                case CompareMode.Combined:
-                    return _compareMax.TryGetValue(key, out var mx) && depth == mx && depth > 0
-                        ? CombinedHighlight : (Color?)null;
-                default:
-                    return null;
-            }
-        }
-
-        private void InvalidateMatrixGrids()
-        {
-            foreach (TabPage page in tabRoles.TabPages)
-                foreach (Control c in page.Controls)
-                    if (c is DataGridView grid)
-                        grid.Invalidate();
-        }
-
-        private static Rectangle GetTabCheckBoxBounds(Rectangle tabRect)
-        {
-            const int size = 14;
-            return new Rectangle(
-                tabRect.Left + 5,
-                tabRect.Top + (tabRect.Height - size) / 2,
-                size, size);
-        }
-
-        private void tabRoles_DrawItem(object sender, DrawItemEventArgs e)
-        {
-            if (e.Index < 0 || e.Index >= tabRoles.TabPages.Count)
-                return;
-
-            var page = tabRoles.TabPages[e.Index];
-            var tabRect = tabRoles.GetTabRect(e.Index);
-            bool selected = (e.State & DrawItemState.Selected) != 0;
-
-            using (var back = new SolidBrush(selected ? SystemColors.Window : SystemColors.Control))
-                e.Graphics.FillRectangle(back, tabRect);
-
-            var box = GetTabCheckBoxBounds(tabRect);
-            bool isChecked = page.Tag is Guid roleId && _compareRoleIds.Contains(roleId);
-            CheckBoxRenderer.DrawCheckBox(e.Graphics, box.Location,
-                isChecked
-                    ? System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal
-                    : System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal);
-
-            var textRect = new Rectangle(
-                box.Right + 3, tabRect.Top,
-                tabRect.Right - box.Right - 6, tabRect.Height);
-            TextRenderer.DrawText(e.Graphics, page.Text, tabRoles.Font, textRect,
-                SystemColors.ControlText,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-        }
-
-        private void tabRoles_MouseDown(object sender, MouseEventArgs e)
-        {
-            if (e.Button != MouseButtons.Left)
-                return;
-
-            for (int i = 0; i < tabRoles.TabPages.Count; i++)
-            {
-                if (!GetTabCheckBoxBounds(tabRoles.GetTabRect(i)).Contains(e.Location))
-                    continue;
-
-                if (tabRoles.TabPages[i].Tag is Guid roleId)
-                {
-                    if (!_compareRoleIds.Remove(roleId))
-                        _compareRoleIds.Add(roleId);
-
-                    UpdateComparisonState();
-                    tabRoles.Invalidate(); // repaint the header checkboxes
-                }
-                return;
-            }
-        }
-
-        private HashSet<int> GetVisibleDepths()
-        {
-            var set = new HashSet<int>();
-            foreach (var kv in _levelMenuItems)
-                if (kv.Value.Checked)
-                    set.Add(kv.Key);
-            return set;
-        }
-
-        private bool[] GetVisibleColumns()
-        {
-            var visible = new bool[MatrixRendering.PrivilegeColumns.Length];
-            for (int c = 0; c < MatrixRendering.PrivilegeColumns.Length; c++)
-                visible[c] = _columnMenuItems[c].Checked;
-            return visible;
         }
 
         public event EventHandler<StatusBarMessageEventArgs> SendMessageToStatusBar;
@@ -481,7 +189,7 @@ namespace SecurityRoleViewer
                     _entityDisplayNames = result.DisplayNames;
                     PopulateRoleList();
                     tsbExport.Enabled = false;
-                    RebuildMatrixPanel();
+                    RefreshMatrixSources();
 
                     SendMessageToStatusBar?.Invoke(this,
                         new StatusBarMessageEventArgs($"Loaded {_allRoles.Count} roles"));
@@ -592,7 +300,7 @@ namespace SecurityRoleViewer
                 _loadedPrivileges.Remove(item.RoleId);
             }
 
-            BeginInvoke((Action)RebuildMatrixPanel);
+            BeginInvoke((Action)RefreshMatrixSources);
         }
 
         private void LoadRolePrivileges(Guid roleId, string roleName)
@@ -616,7 +324,7 @@ namespace SecurityRoleViewer
 
                     _loadedPrivileges[roleId] = (List<RolePrivilegeInfo>)args.Result;
                     tsbExport.Enabled = _loadedPrivileges.Count > 0;
-                    RebuildMatrixPanel();
+                    RefreshMatrixSources();
 
                     SendMessageToStatusBar?.Invoke(this,
                         new StatusBarMessageEventArgs(
@@ -625,82 +333,19 @@ namespace SecurityRoleViewer
             });
         }
 
-        private void RebuildMatrixPanel()
+        // Feeds the shared matrix panel with one source per checked role.
+        private void RefreshMatrixSources()
         {
-            tabRoles.SuspendLayout();
-
-            var selectedTabName = tabRoles.SelectedTab?.Name;
-
-            foreach (TabPage page in tabRoles.TabPages)
-            {
-                foreach (Control c in page.Controls)
-                    c.Dispose();
-            }
-            tabRoles.TabPages.Clear();
-
-            var checkedRoleIds = new List<Guid>();
+            var sources = new List<MatrixSource>();
             foreach (ListViewItem lvItem in lvRoles.CheckedItems)
             {
                 var item = lvItem.Tag as RoleListItem;
-                if (item != null && _loadedPrivileges.ContainsKey(item.RoleId))
-                    checkedRoleIds.Add(item.RoleId);
+                if (item != null && _loadedPrivileges.TryGetValue(item.RoleId, out var privileges))
+                    sources.Add(new MatrixSource(item.RoleId, item.RoleName, privileges));
             }
 
-            // Drop comparison selections for roles that no longer have a tab.
-            _compareRoleIds.IntersectWith(checkedRoleIds);
-
-            if (checkedRoleIds.Count == 0)
-            {
-                tabRoles.ResumeLayout();
-                tabRoles.Visible = false;
-                lblEmpty.Visible = true;
-                tsbExport.Enabled = false;
-                UpdateComparisonState();
-                return;
-            }
-
-            lblEmpty.Visible = false;
-            tabRoles.Visible = true;
-            tsbExport.Enabled = true;
-
-            var keyword = tstEntitySearch.Text?.Trim() ?? "";
-            var visibleDepths = GetVisibleDepths();
-            var visibleColumns = GetVisibleColumns();
-
-            foreach (var roleId in checkedRoleIds)
-            {
-                var privileges = _loadedPrivileges[roleId];
-                var roleName = privileges.FirstOrDefault()?.RoleName ?? "Unknown";
-
-                var page = new TabPage(roleName)
-                {
-                    Name = "tab_" + roleId.ToString("N"),
-                    ToolTipText = roleName,
-                    UseVisualStyleBackColor = true,
-                    Padding = new Padding(3),
-                    Tag = roleId
-                };
-
-                var rows = MatrixRendering.BuildEntityRows(
-                    privileges, keyword, visibleDepths, visibleColumns, ResolveDisplayName);
-
-                var grid = MatrixRendering.CreateMatrixGrid(
-                    rows, visibleColumns, _showLogicalNames, GetCompareHighlight);
-                grid.Dock = DockStyle.Fill;
-                grid.ScrollBars = ScrollBars.Both;
-                grid.Tag = roleId;
-
-                page.Controls.Add(grid);
-                tabRoles.TabPages.Add(page);
-
-                if (page.Name == selectedTabName)
-                    tabRoles.SelectedTab = page;
-            }
-
-            tabRoles.ResumeLayout();
-
-            // Refresh the Compare toolbar + highlight data for the rebuilt tabs.
-            UpdateComparisonState();
+            matrixPanel.SetSources(sources, ResolveDisplayName);
+            tsbExport.Enabled = sources.Count > 0;
         }
 
         private string ResolveDisplayName(string logicalName)
@@ -717,18 +362,6 @@ namespace SecurityRoleViewer
         {
             if (_allRoles != null)
                 PopulateRoleList();
-        }
-
-        private void tstEntitySearch_TextChanged(object sender, EventArgs e)
-        {
-            if (_allRoles != null)
-                RebuildMatrixPanel();
-        }
-
-        private void tsbEntityLabel_Click(object sender, EventArgs e)
-        {
-            _showLogicalNames = tsbEntityLabel.Checked;
-            RebuildMatrixPanel();
         }
 
         private List<RolePrivilegeInfo> CollectCheckedPrivileges()

@@ -26,29 +26,16 @@ namespace SecurityRoleViewer
             this.tsbExport = new System.Windows.Forms.ToolStripDropDownButton();
             this.tsbExportCsv = new System.Windows.Forms.ToolStripMenuItem();
             this.tsbExportExcel = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsFilters = new System.Windows.Forms.ToolStrip();
-            this.toolStripLabelFilters = new System.Windows.Forms.ToolStripLabel();
-            this.toolStripLabelEntity = new System.Windows.Forms.ToolStripLabel();
-            this.tstEntitySearch = new System.Windows.Forms.ToolStripTextBox();
-            this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
-            this.tsddLevels = new System.Windows.Forms.ToolStripDropDownButton();
-            this.tsddColumns = new System.Windows.Forms.ToolStripDropDownButton();
-            this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
-            this.tsbEntityLabel = new System.Windows.Forms.ToolStripButton();
-            this.toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
-            this.tsddCompare = new System.Windows.Forms.ToolStripDropDownButton();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.lvRoles = new System.Windows.Forms.ListView();
             this.colRole = new System.Windows.Forms.ColumnHeader();
-            this.tabRoles = new System.Windows.Forms.TabControl();
-            this.lblEmpty = new System.Windows.Forms.Label();
+            this.matrixPanel = new SecurityRoleViewer.PrivilegeMatrixTabsControl();
             this.tabsTop = new System.Windows.Forms.TabControl();
             this.tabRolePermissions = new System.Windows.Forms.TabPage();
             this.tabUserTeamRoles = new System.Windows.Forms.TabPage();
             this.utrControl = new SecurityRoleViewer.UserTeamRolesControl();
 
             this.toolStrip1.SuspendLayout();
-            this.tsFilters.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
             this.splitContainer1.Panel1.SuspendLayout();
             this.splitContainer1.Panel2.SuspendLayout();
@@ -117,66 +104,6 @@ namespace SecurityRoleViewer
             this.tsbExportExcel.Text = "Export Excel";
             this.tsbExportExcel.Click += new System.EventHandler(this.tsbExportExcel_Click);
 
-            // tsFilters (filter strip for the selected role tabs)
-            this.tsFilters.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-                this.toolStripLabelFilters,
-                this.toolStripLabelEntity,
-                this.tstEntitySearch,
-                this.toolStripSeparator3,
-                this.tsddLevels,
-                this.tsddColumns,
-                this.toolStripSeparator4,
-                this.tsbEntityLabel,
-                this.toolStripSeparator5,
-                this.tsddCompare
-            });
-            this.tsFilters.Dock = System.Windows.Forms.DockStyle.Top;
-            this.tsFilters.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
-            this.tsFilters.Name = "tsFilters";
-            this.tsFilters.BackColor = System.Drawing.SystemColors.Control;
-
-            // toolStripLabelFilters
-            this.toolStripLabelFilters.Name = "toolStripLabelFilters";
-            this.toolStripLabelFilters.Text = "Tab filters:";
-            this.toolStripLabelFilters.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
-
-            // toolStripLabelEntity
-            this.toolStripLabelEntity.Name = "toolStripLabelEntity";
-            this.toolStripLabelEntity.Text = "Entity:";
-
-            // tstEntitySearch
-            this.tstEntitySearch.Name = "tstEntitySearch";
-            this.tstEntitySearch.Size = new System.Drawing.Size(160, 25);
-            this.tstEntitySearch.TextChanged += new System.EventHandler(this.tstEntitySearch_TextChanged);
-
-            // tsddLevels
-            this.tsddLevels.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
-            this.tsddLevels.Name = "tsddLevels";
-            this.tsddLevels.Text = "Access Levels";
-            this.tsddLevels.ShowDropDownArrow = true;
-
-            // tsddColumns
-            this.tsddColumns.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
-            this.tsddColumns.Name = "tsddColumns";
-            this.tsddColumns.Text = "Levels";
-            this.tsddColumns.ShowDropDownArrow = true;
-
-            // tsbEntityLabel
-            this.tsbEntityLabel.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
-            this.tsbEntityLabel.Name = "tsbEntityLabel";
-            this.tsbEntityLabel.Text = "Logical Names";
-            this.tsbEntityLabel.CheckOnClick = true;
-            this.tsbEntityLabel.ToolTipText = "Show entity logical names instead of display names";
-            this.tsbEntityLabel.Click += new System.EventHandler(this.tsbEntityLabel_Click);
-
-            // tsddCompare (hidden until 2+ role tabs are checked for comparison)
-            this.tsddCompare.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
-            this.tsddCompare.Name = "tsddCompare";
-            this.tsddCompare.Text = "Compare";
-            this.tsddCompare.ShowDropDownArrow = true;
-            this.tsddCompare.Visible = false;
-            this.tsddCompare.ToolTipText = "Compare the checked role tabs";
-
             // splitContainer1
             this.splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.splitContainer1.Location = new System.Drawing.Point(0, 25);
@@ -205,28 +132,12 @@ namespace SecurityRoleViewer
             this.colRole.Text = "Role";
             this.colRole.Width = 160;
 
-            // tabRoles (Panel2)
-            this.tabRoles.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.tabRoles.Name = "tabRoles";
-            this.tabRoles.Visible = false;
-            this.tabRoles.DrawMode = System.Windows.Forms.TabDrawMode.OwnerDrawFixed;
-            this.tabRoles.Padding = new System.Drawing.Point(18, 3);
-            this.tabRoles.DrawItem += new System.Windows.Forms.DrawItemEventHandler(this.tabRoles_DrawItem);
-            this.tabRoles.MouseDown += new System.Windows.Forms.MouseEventHandler(this.tabRoles_MouseDown);
+            // matrixPanel (Panel2)
+            this.matrixPanel.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.matrixPanel.Name = "matrixPanel";
+            this.splitContainer1.Panel2.Controls.Add(this.matrixPanel);
 
-            // lblEmpty (Panel2)
-            this.lblEmpty.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.lblEmpty.Name = "lblEmpty";
-            this.lblEmpty.Text = "Check one or more roles to view privileges";
-            this.lblEmpty.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            this.lblEmpty.ForeColor = System.Drawing.Color.Gray;
-            this.lblEmpty.Font = new System.Drawing.Font("Segoe UI", 10F);
-
-            this.splitContainer1.Panel2.Controls.Add(this.tabRoles);
-            this.splitContainer1.Panel2.Controls.Add(this.lblEmpty);
-            this.splitContainer1.Panel2.Controls.Add(this.tsFilters);
-
-            // tabRolePermissions (hosts the original role-permissions view)
+            // tabRolePermissions
             this.tabRolePermissions.Controls.Add(this.splitContainer1);
             this.tabRolePermissions.Controls.Add(this.toolStrip1);
             this.tabRolePermissions.Name = "tabRolePermissions";
@@ -234,7 +145,7 @@ namespace SecurityRoleViewer
             this.tabRolePermissions.UseVisualStyleBackColor = true;
             this.tabRolePermissions.Padding = new System.Windows.Forms.Padding(3);
 
-            // tabUserTeamRoles (hosts the new User/Team Roles view)
+            // tabUserTeamRoles
             this.utrControl.Dock = System.Windows.Forms.DockStyle.Fill;
             this.utrControl.Name = "utrControl";
             this.tabUserTeamRoles.Controls.Add(this.utrControl);
@@ -257,8 +168,6 @@ namespace SecurityRoleViewer
 
             this.toolStrip1.ResumeLayout(false);
             this.toolStrip1.PerformLayout();
-            this.tsFilters.ResumeLayout(false);
-            this.tsFilters.PerformLayout();
             this.splitContainer1.Panel1.ResumeLayout(false);
             this.splitContainer1.Panel2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).EndInit();
@@ -281,22 +190,10 @@ namespace SecurityRoleViewer
         private System.Windows.Forms.ToolStripDropDownButton tsbExport;
         private System.Windows.Forms.ToolStripMenuItem tsbExportCsv;
         private System.Windows.Forms.ToolStripMenuItem tsbExportExcel;
-        private System.Windows.Forms.ToolStrip tsFilters;
-        private System.Windows.Forms.ToolStripLabel toolStripLabelFilters;
-        private System.Windows.Forms.ToolStripLabel toolStripLabelEntity;
-        private System.Windows.Forms.ToolStripTextBox tstEntitySearch;
-        private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
-        private System.Windows.Forms.ToolStripDropDownButton tsddLevels;
-        private System.Windows.Forms.ToolStripDropDownButton tsddColumns;
-        private System.Windows.Forms.ToolStripSeparator toolStripSeparator4;
-        private System.Windows.Forms.ToolStripButton tsbEntityLabel;
-        private System.Windows.Forms.ToolStripSeparator toolStripSeparator5;
-        private System.Windows.Forms.ToolStripDropDownButton tsddCompare;
         private System.Windows.Forms.SplitContainer splitContainer1;
         private System.Windows.Forms.ListView lvRoles;
         private System.Windows.Forms.ColumnHeader colRole;
-        private System.Windows.Forms.TabControl tabRoles;
-        private System.Windows.Forms.Label lblEmpty;
+        private SecurityRoleViewer.PrivilegeMatrixTabsControl matrixPanel;
         private System.Windows.Forms.TabControl tabsTop;
         private System.Windows.Forms.TabPage tabRolePermissions;
         private System.Windows.Forms.TabPage tabUserTeamRoles;

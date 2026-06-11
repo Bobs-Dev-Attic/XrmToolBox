@@ -45,6 +45,12 @@
     <Compile Include="Plugin.cs" />
     <Compile Include="NativeMethods.cs" />
     <Compile Include="IRoleViewerHost.cs" />
+    <Compile Include="PrivilegeMatrixTabsControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="PrivilegeMatrixTabsControl.Designer.cs">
+      <DependentUpon>PrivilegeMatrixTabsControl.cs</DependentUpon>
+    </Compile>
     <Compile Include="Rendering\MatrixRendering.cs" />
     <Compile Include="UserTeamRolesControl.cs">
       <SubType>UserControl</SubType>
