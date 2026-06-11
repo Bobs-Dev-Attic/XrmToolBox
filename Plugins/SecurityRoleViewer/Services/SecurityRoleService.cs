@@ -61,12 +61,25 @@ namespace SecurityRoleViewer.Services
         {
             var query = new QueryExpression("systemuser")
             {
-                ColumnSet = new ColumnSet("fullname", "businessunitid"),
+                // Enabled and disabled are both loaded; the Status filter is client-side.
+                ColumnSet = new ColumnSet(
+                    "fullname", "domainname", "internalemailaddress",
+                    "firstname", "lastname", "isdisabled", "accessmode", "businessunitid"),
                 Orders = { new OrderExpression("fullname", OrderType.Ascending) }
             };
-            // Active users only; disabled accounts add noise to the picker.
-            query.Criteria.AddCondition("isdisabled", ConditionOperator.Equal, false);
             AddBusinessUnitFilter(query, businessUnitIds);
+
+            return _service.RetrieveMultiple(query).Entities.ToList();
+        }
+
+        // All user-to-team links, so the User/Team tab can filter users by team
+        // membership client-side without a query per filter change.
+        public List<Entity> GetTeamMemberships()
+        {
+            var query = new QueryExpression("teammembership")
+            {
+                ColumnSet = new ColumnSet("systemuserid", "teamid")
+            };
 
             return _service.RetrieveMultiple(query).Entities.ToList();
         }

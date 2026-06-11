@@ -1,6 +1,5 @@
 using Microsoft.Xrm.Sdk;
 using SecurityRoleViewer.Models;
-using SecurityRoleViewer.Rendering;
 using SecurityRoleViewer.Services;
 using System;
 using System.Collections.Generic;
@@ -11,13 +10,15 @@ using XrmToolBox.Extensibility;
 namespace SecurityRoleViewer
 {
     /// <summary>
-    /// The "User/Team Roles" tab: pick a user or team on the left, see the effective
-    /// (combined, including team-inherited) entity privilege matrix on the right.
-    /// Hosted inside the plugin via <see cref="IRoleViewerHost"/>.
+    /// The "User/Team Roles" tab: a filterable, checkable list of users and teams on
+    /// the left; checking a principal opens a tab on the right showing its effective
+    /// (combined, team-inherited) privilege matrix via the shared matrix panel.
     /// </summary>
     public partial class UserTeamRolesControl : UserControl
     {
         private enum PrincipalKind { User, Team }
+        private enum StatusFilter { Enabled, Disabled, All }
+        private enum LicenseFilter { All, Licensed, Unlicensed }
 
         private sealed class PrincipalItem
         {
@@ -38,23 +39,25 @@ namespace SecurityRoleViewer
         private Dictionary<string, string> _entityDisplayNames
             = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        // The selected principal's effective privileges (concatenated across all of
-        // its roles); cached so filter changes re-render without re-querying.
-        private List<RolePrivilegeInfo> _currentPrivileges;
+        private List<Entity> _allUsers = new List<Entity>();
+        private List<Entity> _allTeams = new List<Entity>();
+        // userId -> team ids the user belongs to (for the Teams membership filter).
+        private Dictionary<Guid, HashSet<Guid>> _userTeams = new Dictionary<Guid, HashSet<Guid>>();
 
-        private bool _showLogicalNames;
-        private bool _suppressSelect;
+        // Effective privileges per checked principal; feeds the matrix tabs.
+        private readonly Dictionary<Guid, List<RolePrivilegeInfo>> _principalPrivileges
+            = new Dictionary<Guid, List<RolePrivilegeInfo>>();
 
-        private readonly Dictionary<int, ToolStripMenuItem> _levelMenuItems
-            = new Dictionary<int, ToolStripMenuItem>();
-        private readonly ToolStripMenuItem[] _columnMenuItems
-            = new ToolStripMenuItem[MatrixRendering.PrivilegeColumns.Length];
+        private StatusFilter _statusFilter = StatusFilter.Enabled;
+        private LicenseFilter _licenseFilter = LicenseFilter.All;
+        private bool _suppressCheck;
 
         public UserTeamRolesControl()
         {
             InitializeComponent();
-            BuildLevelFilterMenu();
-            BuildColumnFilterMenu();
+            BuildStatusMenu();
+            BuildLicensedMenu();
+            Load += (s, e) => ApplySplit();
         }
 
         internal IRoleViewerHost Host
@@ -63,9 +66,19 @@ namespace SecurityRoleViewer
             set => _host = value;
         }
 
+        private void ApplySplit()
+        {
+            // Left list ~20%, matrix ~80%.
+            var target = (int)(splitContainer1.Width * 0.2);
+            if (target >= splitContainer1.Panel1MinSize
+                && target <= splitContainer1.Width - splitContainer1.Panel2MinSize)
+            {
+                splitContainer1.SplitterDistance = target;
+            }
+        }
+
         // ---- connection / business units --------------------------------------
 
-        /// <summary>Populates the BU dropdown from the parent's single BU load.</summary>
         public void SetBusinessUnits(List<Entity> businessUnits)
         {
             tsddBusinessUnits.DropDownItems.Clear();
@@ -87,19 +100,24 @@ namespace SecurityRoleViewer
             tsddBusinessUnits.Enabled = tsddBusinessUnits.DropDownItems.Count > 0;
         }
 
-        /// <summary>Clears loaded principals and the matrix (e.g. on reconnect).</summary>
         public void Reset()
         {
             _service = null;
             _entityDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            _currentPrivileges = null;
+            _allUsers = new List<Entity>();
+            _allTeams = new List<Entity>();
+            _userTeams = new Dictionary<Guid, HashSet<Guid>>();
+            _principalPrivileges.Clear();
 
-            _suppressSelect = true;
+            tsddTeamsFilter.DropDownItems.Clear();
+            tsddTeamsFilter.Enabled = false;
+
+            _suppressCheck = true;
             lvPrincipals.Items.Clear();
             lvPrincipals.Groups.Clear();
-            _suppressSelect = false;
+            _suppressCheck = false;
 
-            ShowMatrix(null);
+            matrixPanel.SetSources(new List<MatrixSource>(), ResolveDisplayName);
         }
 
         private List<Guid> GetCheckedBusinessUnitIds()
@@ -111,7 +129,7 @@ namespace SecurityRoleViewer
             return ids;
         }
 
-        // ---- load users + teams ----------------------------------------------
+        // ---- load users + teams + memberships ---------------------------------
 
         private void tsbLoadUsers_Click(object sender, EventArgs e)
         {
@@ -137,8 +155,8 @@ namespace SecurityRoleViewer
                 {
                     var users = _service.GetUsers(buFilter);
                     var teams = _service.GetTeams(buFilter);
+                    var memberships = _service.GetTeamMemberships();
 
-                    // Display names are needed to render the matrix later; load once.
                     Dictionary<string, string> displayNames;
                     try { displayNames = _service.GetEntityDisplayNames(); }
                     catch
@@ -150,6 +168,7 @@ namespace SecurityRoleViewer
                     {
                         Users = users,
                         Teams = teams,
+                        Memberships = memberships,
                         DisplayNames = displayNames
                     };
                 },
@@ -163,87 +182,225 @@ namespace SecurityRoleViewer
 
                     var result = (LoadResult)args.Result;
                     _entityDisplayNames = result.DisplayNames;
-                    PopulatePrincipals(result.Users, result.Teams);
+                    _allUsers = result.Users;
+                    _allTeams = result.Teams;
+                    _userTeams = BuildUserTeamMap(result.Memberships);
+                    _principalPrivileges.Clear();
+
+                    PopulateTeamsFilter();
+                    RefilterPrincipals();
+                    matrixPanel.SetSources(new List<MatrixSource>(), ResolveDisplayName);
                 }
             });
         }
 
-        private void PopulatePrincipals(List<Entity> users, List<Entity> teams)
+        private static Dictionary<Guid, HashSet<Guid>> BuildUserTeamMap(List<Entity> memberships)
         {
-            _suppressSelect = true;
+            var map = new Dictionary<Guid, HashSet<Guid>>();
+            foreach (var m in memberships)
+            {
+                var userId = m.GetAttributeValue<Guid>("systemuserid");
+                var teamId = m.GetAttributeValue<Guid>("teamid");
+                if (userId == Guid.Empty || teamId == Guid.Empty)
+                    continue;
+                if (!map.TryGetValue(userId, out var teams))
+                    map[userId] = teams = new HashSet<Guid>();
+                teams.Add(teamId);
+            }
+            return map;
+        }
+
+        private void PopulateTeamsFilter()
+        {
+            tsddTeamsFilter.DropDownItems.Clear();
+            foreach (var team in _allTeams)
+            {
+                var id = team.GetAttributeValue<Guid>("teamid");
+                var name = team.GetAttributeValue<string>("name");
+                var item = new ToolStripMenuItem(string.IsNullOrEmpty(name) ? id.ToString() : name)
+                {
+                    Checked = false,
+                    CheckOnClick = true,
+                    Tag = id
+                };
+                item.CheckedChanged += (s, e) => RefilterPrincipals();
+                tsddTeamsFilter.DropDownItems.Add(item);
+            }
+            tsddTeamsFilter.Enabled = tsddTeamsFilter.DropDownItems.Count > 0;
+        }
+
+        private HashSet<Guid> GetCheckedTeamFilterIds()
+        {
+            var ids = new HashSet<Guid>();
+            foreach (ToolStripMenuItem item in tsddTeamsFilter.DropDownItems)
+                if (item.Checked && item.Tag is Guid id)
+                    ids.Add(id);
+            return ids;
+        }
+
+        // ---- filtering + list population --------------------------------------
+
+        private void UserFilterChanged(object sender, EventArgs e) => RefilterPrincipals();
+
+        private void RefilterPrincipals()
+        {
+            var keyword = tstUserSearch.Text?.Trim() ?? "";
+            var teamFilter = GetCheckedTeamFilterIds();
+
+            var userItems = new List<ListViewItem>();
+            foreach (var user in _allUsers)
+            {
+                if (!PassesStatus(user) || !PassesLicense(user) || !PassesTeamFilter(user, teamFilter))
+                    continue;
+                if (!MatchesUserKeyword(user, keyword))
+                    continue;
+
+                var id = user.GetAttributeValue<Guid>("systemuserid");
+                var name = user.GetAttributeValue<string>("fullname");
+                if (string.IsNullOrEmpty(name)) name = id.ToString();
+                userItems.Add(MakePrincipalItem(PrincipalKind.User, id, name));
+            }
+
+            var teamItems = new List<ListViewItem>();
+            foreach (var team in _allTeams)
+            {
+                var id = team.GetAttributeValue<Guid>("teamid");
+                var name = team.GetAttributeValue<string>("name") ?? id.ToString();
+                if (keyword.Length > 0 && name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                teamItems.Add(MakePrincipalItem(PrincipalKind.Team, id, name));
+            }
+
+            _suppressCheck = true;
             lvPrincipals.BeginUpdate();
             lvPrincipals.Items.Clear();
             lvPrincipals.Groups.Clear();
 
-            AddPrincipalGroup("Users", users, "fullname", "systemuserid", PrincipalKind.User);
-            AddPrincipalGroup("Teams", teams, "name", "teamid", PrincipalKind.Team);
+            AddGroup("Users", userItems);
+            AddGroup("Teams", teamItems);
 
             ResizePrincipalColumn();
             lvPrincipals.EndUpdate();
-            _suppressSelect = false;
-
-            ShowMatrix(null);
+            _suppressCheck = false;
         }
 
-        private void AddPrincipalGroup(
-            string header, List<Entity> entities, string nameAttr, string idAttr, PrincipalKind kind)
+        private ListViewItem MakePrincipalItem(PrincipalKind kind, Guid id, string name)
         {
-            if (entities == null || entities.Count == 0)
+            return new ListViewItem(name)
+            {
+                Tag = new PrincipalItem(kind, id, name),
+                Checked = _principalPrivileges.ContainsKey(id)
+            };
+        }
+
+        private void AddGroup(string header, List<ListViewItem> items)
+        {
+            if (items.Count == 0)
                 return;
 
-            var group = new ListViewGroup(header, $"{header} ({entities.Count})");
+            var group = new ListViewGroup(header, $"{header} ({items.Count})");
             lvPrincipals.Groups.Add(group);
-
-            foreach (var entity in entities)
+            foreach (var item in items)
             {
-                var id = entity.GetAttributeValue<Guid>(idAttr);
-                var name = entity.GetAttributeValue<string>(nameAttr);
-                if (string.IsNullOrEmpty(name)) name = id.ToString();
-
-                lvPrincipals.Items.Add(new ListViewItem(name, group)
-                {
-                    Tag = new PrincipalItem(kind, id, name)
-                });
+                item.Group = group;
+                lvPrincipals.Items.Add(item);
             }
         }
 
-        // ---- principal selection -> effective matrix --------------------------
-
-        private void lvPrincipals_SelectedIndexChanged(object sender, EventArgs e)
+        private bool PassesStatus(Entity user)
         {
-            if (_suppressSelect || _service == null) return;
-            if (lvPrincipals.SelectedItems.Count == 0) return;
+            if (_statusFilter == StatusFilter.All) return true;
+            bool disabled = user.GetAttributeValue<bool>("isdisabled");
+            return _statusFilter == StatusFilter.Disabled ? disabled : !disabled;
+        }
 
-            var principal = lvPrincipals.SelectedItems[0].Tag as PrincipalItem;
+        private bool PassesLicense(Entity user)
+        {
+            if (_licenseFilter == LicenseFilter.All) return true;
+            // "Licensed" proxy: accessmode Read-Write (0).
+            bool licensed = user.GetAttributeValue<OptionSetValue>("accessmode")?.Value == 0;
+            return _licenseFilter == LicenseFilter.Licensed ? licensed : !licensed;
+        }
+
+        private bool PassesTeamFilter(Entity user, HashSet<Guid> teamFilter)
+        {
+            if (teamFilter.Count == 0) return true;
+            var userId = user.GetAttributeValue<Guid>("systemuserid");
+            return _userTeams.TryGetValue(userId, out var teams) && teams.Overlaps(teamFilter);
+        }
+
+        private static bool MatchesUserKeyword(Entity user, string keyword)
+        {
+            if (keyword.Length == 0) return true;
+            string[] fields =
+            {
+                user.GetAttributeValue<string>("fullname"),
+                user.GetAttributeValue<string>("domainname"),
+                user.GetAttributeValue<string>("internalemailaddress"),
+                user.GetAttributeValue<string>("firstname"),
+                user.GetAttributeValue<string>("lastname")
+            };
+            return fields.Any(f => !string.IsNullOrEmpty(f)
+                && f.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        // ---- check -> effective matrix sources --------------------------------
+
+        private void lvPrincipals_ItemChecked(object sender, ItemCheckedEventArgs e)
+        {
+            if (_suppressCheck || _service == null) return;
+
+            var principal = e.Item.Tag as PrincipalItem;
             if (principal == null) return;
 
-            _host.RunWork(new WorkAsyncInfo
+            if (e.Item.Checked)
             {
-                Message = $"Loading effective privileges for {principal.Name}...",
-                Work = (w, args) =>
+                if (_principalPrivileges.ContainsKey(principal.Id))
                 {
-                    var roleIds = ResolveEffectiveRoleIds(principal);
-
-                    // Concatenate every role's privileges; BuildEntityRows already
-                    // takes the max depth per entity/privilege, giving effective access.
-                    var privileges = new List<RolePrivilegeInfo>();
-                    foreach (var roleId in roleIds)
-                        privileges.AddRange(_service.GetRolePrivileges(roleId, string.Empty));
-
-                    args.Result = privileges;
-                },
-                PostWorkCallBack = args =>
-                {
-                    if (args.Error != null)
-                    {
-                        _host.ShowError(args.Error, "Loading Effective Privileges");
-                        return;
-                    }
-
-                    _currentPrivileges = (List<RolePrivilegeInfo>)args.Result;
-                    RebuildMatrix();
+                    RefreshSources();
+                    return;
                 }
-            });
+
+                _host.RunWork(new WorkAsyncInfo
+                {
+                    Message = $"Loading effective privileges for {principal.Name}...",
+                    Work = (w, args) =>
+                    {
+                        var roleIds = ResolveEffectiveRoleIds(principal);
+                        var privileges = new List<RolePrivilegeInfo>();
+                        foreach (var roleId in roleIds)
+                            privileges.AddRange(_service.GetRolePrivileges(roleId, string.Empty));
+                        args.Result = privileges;
+                    },
+                    PostWorkCallBack = args =>
+                    {
+                        if (args.Error != null)
+                        {
+                            _host.ShowError(args.Error, "Loading Effective Privileges");
+                            return;
+                        }
+                        _principalPrivileges[principal.Id] = (List<RolePrivilegeInfo>)args.Result;
+                        RefreshSources();
+                    }
+                });
+            }
+            else
+            {
+                _principalPrivileges.Remove(principal.Id);
+                RefreshSources();
+            }
+        }
+
+        private void RefreshSources()
+        {
+            var sources = new List<MatrixSource>();
+            foreach (ListViewItem lvItem in lvPrincipals.CheckedItems)
+            {
+                var principal = lvItem.Tag as PrincipalItem;
+                if (principal != null && _principalPrivileges.TryGetValue(principal.Id, out var privs))
+                    sources.Add(new MatrixSource(principal.Id, principal.Name, privs));
+            }
+            matrixPanel.SetSources(sources, ResolveDisplayName);
         }
 
         private List<Guid> ResolveEffectiveRoleIds(PrincipalItem principal)
@@ -255,7 +412,6 @@ namespace SecurityRoleViewer
                 foreach (var id in _service.GetUserRoleIds(principal.Id))
                     roleIds.Add(id);
 
-                // Roles inherited through team membership.
                 foreach (var teamId in _service.GetUserTeamIds(principal.Id))
                     foreach (var id in _service.GetTeamRoleIds(teamId))
                         roleIds.Add(id);
@@ -269,47 +425,6 @@ namespace SecurityRoleViewer
             return roleIds.ToList();
         }
 
-        // ---- matrix rendering -------------------------------------------------
-
-        private void RebuildMatrix()
-        {
-            if (_currentPrivileges == null)
-            {
-                ShowMatrix(null);
-                return;
-            }
-
-            var keyword = tstEntitySearch.Text?.Trim() ?? "";
-            var rows = MatrixRendering.BuildEntityRows(
-                _currentPrivileges, keyword, GetVisibleDepths(), GetVisibleColumns(),
-                ResolveDisplayName);
-
-            var grid = MatrixRendering.CreateMatrixGrid(
-                rows, GetVisibleColumns(), _showLogicalNames, null);
-            grid.Dock = DockStyle.Fill;
-            grid.ScrollBars = ScrollBars.Both;
-
-            ShowMatrix(grid);
-        }
-
-        private void ShowMatrix(DataGridView grid)
-        {
-            foreach (Control c in pnlMatrix.Controls)
-                c.Dispose();
-            pnlMatrix.Controls.Clear();
-
-            if (grid == null)
-            {
-                lblEmpty.Visible = true;
-                pnlMatrix.Visible = false;
-                return;
-            }
-
-            lblEmpty.Visible = false;
-            pnlMatrix.Visible = true;
-            pnlMatrix.Controls.Add(grid);
-        }
-
         private string ResolveDisplayName(string logicalName)
         {
             if (!string.IsNullOrEmpty(logicalName)
@@ -320,69 +435,49 @@ namespace SecurityRoleViewer
             return logicalName;
         }
 
-        // ---- filter menus (mirror Role Permissions) ---------------------------
+        // ---- status / licensed filter menus -----------------------------------
 
-        private void BuildLevelFilterMenu()
+        private void BuildStatusMenu()
         {
-            foreach (var level in MatrixRendering.AccessLevels)
+            AddRadioItem(tsddStatus, "Enabled", StatusFilter.Enabled, _statusFilter,
+                v => { _statusFilter = (StatusFilter)v; });
+            AddRadioItem(tsddStatus, "Disabled", StatusFilter.Disabled, _statusFilter,
+                v => { _statusFilter = (StatusFilter)v; });
+            AddRadioItem(tsddStatus, "All", StatusFilter.All, _statusFilter,
+                v => { _statusFilter = (StatusFilter)v; });
+            tsddStatus.Text = "Status: Enabled";
+        }
+
+        private void BuildLicensedMenu()
+        {
+            AddRadioItem(tsddLicensed, "All", LicenseFilter.All, _licenseFilter,
+                v => { _licenseFilter = (LicenseFilter)v; });
+            AddRadioItem(tsddLicensed, "Licensed", LicenseFilter.Licensed, _licenseFilter,
+                v => { _licenseFilter = (LicenseFilter)v; });
+            AddRadioItem(tsddLicensed, "Non-licensed", LicenseFilter.Unlicensed, _licenseFilter,
+                v => { _licenseFilter = (LicenseFilter)v; });
+            tsddLicensed.Text = "Licensed: All";
+        }
+
+        // Adds one mutually-exclusive option to a dropdown; on click it updates the
+        // backing field (via apply), re-checks siblings, relabels, and refilters.
+        private void AddRadioItem(
+            ToolStripDropDownButton button, string label, object value, object current, Action<object> apply)
+        {
+            var item = new ToolStripMenuItem(label)
             {
-                var item = new ToolStripMenuItem(level.Label)
-                {
-                    Checked = true,
-                    CheckOnClick = true,
-                    Tag = level.Depth
-                };
-                item.CheckedChanged += (s, e) => RebuildMatrix();
-                _levelMenuItems[level.Depth] = item;
-                tsddLevels.DropDownItems.Add(item);
-            }
-        }
-
-        private void BuildColumnFilterMenu()
-        {
-            for (int c = 0; c < MatrixRendering.PrivilegeColumns.Length; c++)
+                Tag = value,
+                Checked = Equals(value, current)
+            };
+            item.Click += (s, e) =>
             {
-                var item = new ToolStripMenuItem(
-                    MatrixRendering.ColumnLabel(MatrixRendering.PrivilegeColumns[c]))
-                {
-                    Checked = true,
-                    CheckOnClick = true,
-                    Tag = c
-                };
-                item.CheckedChanged += (s, e) => RebuildMatrix();
-                _columnMenuItems[c] = item;
-                tsddColumns.DropDownItems.Add(item);
-            }
-        }
-
-        private HashSet<int> GetVisibleDepths()
-        {
-            var set = new HashSet<int>();
-            foreach (var kv in _levelMenuItems)
-                if (kv.Value.Checked)
-                    set.Add(kv.Key);
-            return set;
-        }
-
-        private bool[] GetVisibleColumns()
-        {
-            var visible = new bool[MatrixRendering.PrivilegeColumns.Length];
-            for (int c = 0; c < MatrixRendering.PrivilegeColumns.Length; c++)
-                visible[c] = _columnMenuItems[c].Checked;
-            return visible;
-        }
-
-        private void tstEntitySearch_TextChanged(object sender, EventArgs e)
-        {
-            if (_currentPrivileges != null)
-                RebuildMatrix();
-        }
-
-        private void tsbEntityLabel_Click(object sender, EventArgs e)
-        {
-            _showLogicalNames = tsbEntityLabel.Checked;
-            if (_currentPrivileges != null)
-                RebuildMatrix();
+                apply(value);
+                foreach (ToolStripMenuItem sibling in button.DropDownItems)
+                    sibling.Checked = sibling == item;
+                button.Text = (button == tsddStatus ? "Status: " : "Licensed: ") + label;
+                RefilterPrincipals();
+            };
+            button.DropDownItems.Add(item);
         }
 
         // ---- left list sizing -------------------------------------------------
@@ -402,6 +497,7 @@ namespace SecurityRoleViewer
         {
             public List<Entity> Users { get; set; }
             public List<Entity> Teams { get; set; }
+            public List<Entity> Memberships { get; set; }
             public Dictionary<string, string> DisplayNames { get; set; }
         }
     }
