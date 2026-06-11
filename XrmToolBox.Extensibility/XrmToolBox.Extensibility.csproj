@@ -258,10 +258,10 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CrmSdk.CoreAssemblies">
-      <Version>9.0.2.59</Version>
+      <Version>9.0.2.60</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.CrmSdk.Workflow">
-      <Version>9.0.2.59</Version>
+      <Version>9.0.2.60</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.AI">
       <Version>9.7.1</Version>
@@ -270,7 +270,7 @@
       <Version>9.0.7</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions">
-      <Version>9.0.7</Version>
+      <Version>10.0.9</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.NETCore.Platforms">
       <Version>7.0.4</Version>
@@ -312,7 +312,7 @@
       <Version>8.1.2</Version>
     </PackageReference>
     <PackageReference Include="System.Text.Json">
-      <Version>9.0.7</Version>
+      <Version>10.0.9</Version>
     </PackageReference>
     <PackageReference Include="System.Threading.Channels">
       <Version>9.0.7</Version>
@@ -321,7 +321,7 @@
       <Version>4.6.3</Version>
     </PackageReference>
     <PackageReference Include="System.ValueTuple">
-      <Version>4.6.1</Version>
+      <Version>4.6.2</Version>
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
