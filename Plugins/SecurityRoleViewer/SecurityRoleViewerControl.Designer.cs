@@ -33,6 +33,8 @@ namespace SecurityRoleViewer
             this.tsddColumns = new System.Windows.Forms.ToolStripDropDownButton();
             this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
             this.tsbEntityLabel = new System.Windows.Forms.ToolStripButton();
+            this.toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
+            this.tsddCompare = new System.Windows.Forms.ToolStripDropDownButton();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.lvRoles = new System.Windows.Forms.ListView();
             this.colRole = new System.Windows.Forms.ColumnHeader();
@@ -105,7 +107,9 @@ namespace SecurityRoleViewer
                 this.tsddLevels,
                 this.tsddColumns,
                 this.toolStripSeparator4,
-                this.tsbEntityLabel
+                this.tsbEntityLabel,
+                this.toolStripSeparator5,
+                this.tsddCompare
             });
             this.tsFilters.Dock = System.Windows.Forms.DockStyle.Top;
             this.tsFilters.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
@@ -146,6 +150,14 @@ namespace SecurityRoleViewer
             this.tsbEntityLabel.ToolTipText = "Show entity logical names instead of display names";
             this.tsbEntityLabel.Click += new System.EventHandler(this.tsbEntityLabel_Click);
 
+            // tsddCompare (hidden until 2+ role tabs are checked for comparison)
+            this.tsddCompare.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.tsddCompare.Name = "tsddCompare";
+            this.tsddCompare.Text = "Compare";
+            this.tsddCompare.ShowDropDownArrow = true;
+            this.tsddCompare.Visible = false;
+            this.tsddCompare.ToolTipText = "Compare the checked role tabs";
+
             // splitContainer1
             this.splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.splitContainer1.Location = new System.Drawing.Point(0, 25);
@@ -178,6 +190,10 @@ namespace SecurityRoleViewer
             this.tabRoles.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tabRoles.Name = "tabRoles";
             this.tabRoles.Visible = false;
+            this.tabRoles.DrawMode = System.Windows.Forms.TabDrawMode.OwnerDrawFixed;
+            this.tabRoles.Padding = new System.Drawing.Point(18, 3);
+            this.tabRoles.DrawItem += new System.Windows.Forms.DrawItemEventHandler(this.tabRoles_DrawItem);
+            this.tabRoles.MouseDown += new System.Windows.Forms.MouseEventHandler(this.tabRoles_MouseDown);
 
             // lblEmpty (Panel2)
             this.lblEmpty.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -227,6 +243,8 @@ namespace SecurityRoleViewer
         private System.Windows.Forms.ToolStripDropDownButton tsddColumns;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator4;
         private System.Windows.Forms.ToolStripButton tsbEntityLabel;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator5;
+        private System.Windows.Forms.ToolStripDropDownButton tsddCompare;
         private System.Windows.Forms.SplitContainer splitContainer1;
         private System.Windows.Forms.ListView lvRoles;
         private System.Windows.Forms.ColumnHeader colRole;
