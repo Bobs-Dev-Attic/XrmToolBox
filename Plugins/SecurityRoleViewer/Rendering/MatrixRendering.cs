@@ -236,9 +236,9 @@ namespace SecurityRoleViewer.Rendering
             float start;
             switch (depth)
             {
-                case 1:  color = Color.FromArgb(237, 162, 0);  sweep = 90f;  start = 0f; break;   // User - amber, +60 CW
+                case 1:  color = Color.FromArgb(237, 162, 0);  sweep = 90f;  start = 45f; break;   // User - amber, +60 CW
                 case 2:  color = Color.FromArgb(240, 199, 0);  sweep = 180f; start = 0f;   break;   // Business Unit - gold, +90 CW
-                case 4:  color = Color.FromArgb(76, 175, 80);  sweep = 270f; start = -75f; break;   // Parent-Child BU - green, +15 CW
+                case 4:  color = Color.FromArgb(76, 175, 80);  sweep = 270f; start = 45f; break;   // Parent-Child BU - green, +15 CW
                 case 8:  color = Color.FromArgb(46, 155, 50);  sweep = 360f; start = -90f; break;   // Organization - full green
                 default: color = Color.FromArgb(200, 70, 70);  sweep = 0f;   start = -90f; break;   // None - red ring
             }
