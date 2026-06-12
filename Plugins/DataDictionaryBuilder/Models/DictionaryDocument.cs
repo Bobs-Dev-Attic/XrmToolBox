@@ -14,6 +14,7 @@ namespace DataDictionaryBuilder.Models
         public string LogicalName { get; set; }
         public string DisplayName { get; set; }
         public bool IsCustom { get; set; }
+        public string Category { get; set; }
     }
 
     /// <summary>An entity's full metadata, loaded on demand when it is checked.</summary>

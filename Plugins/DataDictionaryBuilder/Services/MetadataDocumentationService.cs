@@ -17,8 +17,9 @@ namespace DataDictionaryBuilder.Services
             _service = service;
         }
 
-        /// <summary>Fast, lightweight entity list (entity-level metadata only).</summary>
-        public List<EntityListItem> GetEntities(bool customOnly)
+        /// <summary>Fast, lightweight entity list (entity-level metadata only), each
+        /// stamped with a category for the toolbar filter.</summary>
+        public List<EntityListItem> GetEntities()
         {
             var request = new RetrieveAllEntitiesRequest
             {
@@ -29,15 +30,24 @@ namespace DataDictionaryBuilder.Services
             var response = (RetrieveAllEntitiesResponse)_service.Execute(request);
             return response.EntityMetadata
                 .Where(e => !string.IsNullOrEmpty(e.LogicalName))
-                .Where(e => !customOnly || e.IsCustomEntity == true)
                 .Select(e => new EntityListItem
                 {
                     LogicalName = e.LogicalName,
                     DisplayName = Label(e.DisplayName, e.LogicalName),
-                    IsCustom = e.IsCustomEntity == true
+                    IsCustom = e.IsCustomEntity == true,
+                    Category = Categorize(e)
                 })
                 .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        // First match wins. A custom activity falls under Custom (checked first).
+        private static string Categorize(EntityMetadata entity)
+        {
+            if (entity.IsIntersect == true || entity.IsLogicalEntity == true) return "Misc";
+            if (entity.IsCustomEntity == true) return "Custom";
+            if (entity.IsActivity == true) return "Activity";
+            return "System";
         }
 
         /// <summary>Full metadata for one entity, loaded on demand when it is checked.</summary>

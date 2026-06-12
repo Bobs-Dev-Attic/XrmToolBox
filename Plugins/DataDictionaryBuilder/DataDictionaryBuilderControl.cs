@@ -18,9 +18,11 @@ namespace DataDictionaryBuilder
     {
         private readonly ToolStrip _toolStrip = new ToolStrip();
         private readonly ToolStripButton _loadButton = new ToolStripButton("Load Entities");
-        private readonly ToolStripButton _customOnlyButton = new ToolStripButton("Custom entities only");
+        private readonly ToolStripDropDownButton _categoryButton = new ToolStripDropDownButton("Categories");
         private readonly ToolStripButton _systemAttributesButton = new ToolStripButton("Include system attributes");
         private readonly ToolStripDropDownButton _exportButton = new ToolStripDropDownButton("Export");
+
+        private static readonly string[] Categories = { "Custom", "System", "Activity", "Misc" };
 
         private readonly SplitContainer _split = new SplitContainer();
         private readonly TextBox _findBox = new TextBox();
@@ -52,9 +54,22 @@ namespace DataDictionaryBuilder
 
             _loadButton.Click += LoadButton_Click;
 
-            _customOnlyButton.CheckOnClick = true;
-            _customOnlyButton.Checked = true;
-            _customOnlyButton.ToolTipText = "List only custom entities";
+            _categoryButton.ShowDropDownArrow = true;
+            _categoryButton.ToolTipText = "Filter the entity list by category";
+            foreach (var category in Categories)
+            {
+                var item = new ToolStripMenuItem(category)
+                {
+                    Checked = true,
+                    CheckOnClick = true,
+                    Tag = category
+                };
+                item.CheckedChanged += (s, e) =>
+                {
+                    if (_allEntities.Count > 0) PopulateEntityList();
+                };
+                _categoryButton.DropDownItems.Add(item);
+            }
 
             _systemAttributesButton.CheckOnClick = true;
             _systemAttributesButton.ToolTipText = "Include system attributes in the Attributes tab";
@@ -66,7 +81,7 @@ namespace DataDictionaryBuilder
 
             _toolStrip.Items.Add(_loadButton);
             _toolStrip.Items.Add(new ToolStripSeparator());
-            _toolStrip.Items.Add(_customOnlyButton);
+            _toolStrip.Items.Add(_categoryButton);
             _toolStrip.Items.Add(_systemAttributesButton);
             _toolStrip.Items.Add(new ToolStripSeparator());
             _toolStrip.Items.Add(_exportButton);
@@ -151,7 +166,6 @@ namespace DataDictionaryBuilder
         private void LoadEntities()
         {
             _service = new MetadataDocumentationService(Service);
-            bool customOnly = _customOnlyButton.Checked;
 
             _loadButton.Enabled = false;
             SendMessage("Loading entity list...");
@@ -159,7 +173,7 @@ namespace DataDictionaryBuilder
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Loading entities...",
-                Work = (worker, args) => args.Result = _service.GetEntities(customOnly),
+                Work = (worker, args) => args.Result = _service.GetEntities(),
                 PostWorkCallBack = args =>
                 {
                     _loadButton.Enabled = true;
@@ -181,9 +195,19 @@ namespace DataDictionaryBuilder
             });
         }
 
+        private HashSet<string> GetCheckedCategories()
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ToolStripMenuItem item in _categoryButton.DropDownItems)
+                if (item.Checked && item.Tag is string category)
+                    set.Add(category);
+            return set;
+        }
+
         private void PopulateEntityList()
         {
             var keyword = _findBox.Text?.Trim() ?? "";
+            var categories = GetCheckedCategories();
 
             _suppressCheck = true;
             _entityList.BeginUpdate();
@@ -191,6 +215,9 @@ namespace DataDictionaryBuilder
 
             foreach (var entity in _allEntities)
             {
+                if (!categories.Contains(entity.Category ?? "System"))
+                    continue;
+
                 if (keyword.Length > 0
                     && entity.DisplayName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0
                     && entity.LogicalName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0)
