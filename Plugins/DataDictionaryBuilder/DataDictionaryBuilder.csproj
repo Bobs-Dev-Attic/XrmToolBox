@@ -43,6 +43,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Plugin.cs" />
+    <Compile Include="ErdForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="DataDictionaryBuilderControl.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -63,6 +66,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.CrmSdk.CoreAssemblies">
       <Version>9.0.2.60</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Web.WebView2">
+      <Version>1.0.3351.48</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions">
       <Version>10.0.9</Version>

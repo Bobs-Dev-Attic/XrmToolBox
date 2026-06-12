@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 using XrmToolBox.Extensibility;
 using XrmToolBox.Extensibility.Args;
@@ -20,9 +21,13 @@ namespace DataDictionaryBuilder
         private readonly ToolStripButton _loadButton = new ToolStripButton("Load Entities");
         private readonly ToolStripDropDownButton _categoryButton = new ToolStripDropDownButton("Categories");
         private readonly ToolStripButton _systemAttributesButton = new ToolStripButton("Include system attributes");
+        private readonly ToolStripButton _erdButton = new ToolStripButton("ERD");
         private readonly ToolStripDropDownButton _exportButton = new ToolStripDropDownButton("Export");
 
         private static readonly string[] Categories = { "Custom", "System", "Activity", "Misc" };
+
+        // Entity logical names whose tab header is checked for the ERD.
+        private readonly HashSet<string> _erdChecked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private readonly SplitContainer _split = new SplitContainer();
         private readonly TextBox _findBox = new TextBox();
@@ -74,6 +79,10 @@ namespace DataDictionaryBuilder
             _systemAttributesButton.CheckOnClick = true;
             _systemAttributesButton.ToolTipText = "Include system attributes in the Attributes tab";
 
+            _erdButton.Visible = false;
+            _erdButton.ToolTipText = "Show an entity relationship diagram of the checked entity tabs";
+            _erdButton.Click += ErdButton_Click;
+
             _exportButton.Enabled = false;
             _exportButton.DropDownItems.Add("CSV files", null, ExportCsv_Click);
             _exportButton.DropDownItems.Add("Markdown", null, ExportMarkdown_Click);
@@ -84,6 +93,7 @@ namespace DataDictionaryBuilder
             _toolStrip.Items.Add(_categoryButton);
             _toolStrip.Items.Add(_systemAttributesButton);
             _toolStrip.Items.Add(new ToolStripSeparator());
+            _toolStrip.Items.Add(_erdButton);
             _toolStrip.Items.Add(_exportButton);
 
             // Left: find box + checkbox entity list.
@@ -118,9 +128,13 @@ namespace DataDictionaryBuilder
             leftPanel.Controls.Add(_findBox);
             leftPanel.Controls.Add(findLabel);
 
-            // Right: per-entity tabs + empty-state label.
+            // Right: per-entity tabs (with header checkboxes for the ERD) + empty state.
             _tabs.Dock = DockStyle.Fill;
             _tabs.Visible = false;
+            _tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
+            _tabs.Padding = new Point(18, 3);
+            _tabs.DrawItem += Tabs_DrawItem;
+            _tabs.MouseDown += Tabs_MouseDown;
 
             _emptyLabel.Dock = DockStyle.Fill;
             _emptyLabel.TextAlign = ContentAlignment.MiddleCenter;
@@ -339,6 +353,9 @@ namespace DataDictionaryBuilder
                 break;
             }
 
+            _erdChecked.Remove(logicalName);
+            UpdateErdButton();
+
             if (_tabs.TabPages.Count == 0)
             {
                 _tabs.Visible = false;
@@ -355,12 +372,133 @@ namespace DataDictionaryBuilder
             _tabs.TabPages.Clear();
             _tabs.Visible = false;
             _emptyLabel.Visible = true;
+
+            _erdChecked.Clear();
+            UpdateErdButton();
         }
 
         private void ShowTabs()
         {
             _emptyLabel.Visible = false;
             _tabs.Visible = true;
+        }
+
+        // ---- ERD: tab-header checkboxes + diagram -----------------------------
+
+        private static Rectangle GetTabCheckBoxBounds(Rectangle tabRect)
+        {
+            const int size = 14;
+            return new Rectangle(tabRect.Left + 5, tabRect.Top + (tabRect.Height - size) / 2, size, size);
+        }
+
+        private void Tabs_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= _tabs.TabPages.Count) return;
+
+            var page = _tabs.TabPages[e.Index];
+            var tabRect = _tabs.GetTabRect(e.Index);
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+
+            using (var back = new SolidBrush(selected ? SystemColors.Window : SystemColors.Control))
+                e.Graphics.FillRectangle(back, tabRect);
+
+            var box = GetTabCheckBoxBounds(tabRect);
+            bool isChecked = page.Tag is string key && _erdChecked.Contains(key);
+            CheckBoxRenderer.DrawCheckBox(e.Graphics, box.Location,
+                isChecked
+                    ? System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal
+                    : System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal);
+
+            var textRect = new Rectangle(box.Right + 3, tabRect.Top, tabRect.Right - box.Right - 6, tabRect.Height);
+            TextRenderer.DrawText(e.Graphics, page.Text, _tabs.Font, textRect, SystemColors.ControlText,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+
+        private void Tabs_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+
+            for (int i = 0; i < _tabs.TabPages.Count; i++)
+            {
+                if (!GetTabCheckBoxBounds(_tabs.GetTabRect(i)).Contains(e.Location)) continue;
+
+                if (_tabs.TabPages[i].Tag is string key)
+                {
+                    if (!_erdChecked.Remove(key)) _erdChecked.Add(key);
+                    UpdateErdButton();
+                    _tabs.Invalidate();
+                }
+                return;
+            }
+        }
+
+        private void UpdateErdButton()
+        {
+            _erdButton.Visible = _erdChecked.Count >= 2;
+        }
+
+        private void ErdButton_Click(object sender, EventArgs e)
+        {
+            if (_erdChecked.Count < 2) return;
+            new ErdForm(BuildCheckedMermaid()).Show();
+        }
+
+        // Mermaid erDiagram for the checked entities and the relationships between them.
+        private string BuildCheckedMermaid()
+        {
+            var keys = new HashSet<string>(_erdChecked, StringComparer.OrdinalIgnoreCase);
+            var sb = new StringBuilder();
+            sb.AppendLine("erDiagram");
+
+            // Declare each checked entity (with its PK) so unrelated ones still show.
+            foreach (var key in keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+            {
+                var pk = _details.TryGetValue(key, out var d) && !string.IsNullOrEmpty(d.Entity.PrimaryIdAttribute)
+                    ? Sanitize(d.Entity.PrimaryIdAttribute)
+                    : "id";
+                sb.AppendLine("  " + Sanitize(key) + " {");
+                sb.AppendLine("    uniqueidentifier " + pk + " PK");
+                sb.AppendLine("  }");
+            }
+
+            // Relationships among checked entities, deduped by schema name.
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var key in keys)
+            {
+                if (!_details.TryGetValue(key, out var detail)) continue;
+
+                foreach (var rel in detail.Relationships)
+                {
+                    if (string.IsNullOrEmpty(rel.SchemaName) || !seen.Add(rel.SchemaName)) continue;
+
+                    string a, b, connector;
+                    if (rel.RelationshipType == "Many-to-many")
+                    {
+                        a = rel.Entity1LogicalName;
+                        b = rel.Entity2LogicalName;
+                        connector = "}o--o{";
+                    }
+                    else // referenced (one) ||--o{ referencing (many)
+                    {
+                        a = rel.ReferencedEntity;
+                        b = rel.ReferencingEntity;
+                        connector = "||--o{";
+                    }
+
+                    if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) continue;
+                    if (!keys.Contains(a) || !keys.Contains(b)) continue;
+
+                    sb.AppendLine("  " + Sanitize(a) + " " + connector + " " + Sanitize(b) + " : \"" + rel.SchemaName + "\"");
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private static string Sanitize(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "_";
+            return new string(name.Select(c => char.IsLetterOrDigit(c) || c == '_' ? c : '_').ToArray());
         }
 
         private static TabPage BuildGridTab(string title, Control content)
