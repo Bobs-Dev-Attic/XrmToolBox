@@ -67,8 +67,6 @@ namespace XrmToolBox.New
             SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
             SetStyle(ControlStyles.AllPaintingInWmPaint, true);
 
-            WelcomeDialog.ShowSplashScreen();
-
             SetTheme();
             dpMain.Theme.Extender.FloatWindowFactory = new CustomFloatWindowFactory();
 
@@ -359,6 +357,7 @@ Would you like to reinstall last stable release of connection controls?";
                     throw new Exception("Unable to connect to load tools. Please check your network settings");
                 }
 
+                pnlNoToolLibraryAccess.Visible = false;
                 return true;
             }
             catch (Exception error)
@@ -398,7 +397,7 @@ Would you like to reinstall last stable release of connection controls?";
             Options.Instance.Save();
         }
 
-        private async void NewForm_Load(object sender, System.EventArgs e)
+        private void NewForm_Load(object sender, System.EventArgs e)
         {
             if (!Options.Instance.DoNotShowStartPage && startPage != null)
             {
@@ -410,8 +409,35 @@ Would you like to reinstall last stable release of connection controls?";
                 ((DockContent)pluginsForm).Show(dpMain, DockState.Document);
             }
 
+            // Adapt size of current form
+            if (Options.Instance.Size.IsMaximized)
+            {
+                WindowState = FormWindowState.Maximized;
+            }
+            else
+            {
+                Options.Instance.Size.ApplyFormSize(this);
+            }
+
+            // Hide & remove Welcome screen
+            WelcomeDialog.CloseForm();
+            Opacity = 100;
+            BringToTop();
+
+            CheckForEarlyBoundEntities();
+
+            LoadStartupData(sender);
+        }
+
+        /// <summary>
+        /// Startup work that queries web services. Runs after the main window is displayed so that
+        /// a slow or unavailable network does not delay it.
+        /// </summary>
+        private async void LoadStartupData(object sender)
+        {
             WebProxyHelper.ApplyProxy();
 
+            ccsb.SetMessage("Connecting to the Tool Library...");
             await LoadStore();
 
             var tasks = new List<Task>
@@ -447,31 +473,10 @@ Would you like to reinstall last stable release of connection controls?";
                 StartPluginWithoutConnection();
             }
 
+            ccsb.SetMessage("Checking for updates...");
+
             tasks.ForEach(x => x.Start());
             await Task.WhenAll(tasks.ToArray());
-
-            // Adapt size of current form
-            if (Options.Instance.Size.IsMaximized)
-            {
-                Invoke(new Action(() =>
-                {
-                    WindowState = FormWindowState.Maximized;
-                }));
-            }
-            else
-            {
-                Options.Instance.Size.ApplyFormSize(this);
-            }
-
-            // Hide & remove Welcome screen
-            WelcomeDialog.CloseForm();
-            Invoke(new Action(() =>
-            {
-                Opacity = 100;
-                BringToTop();
-
-                CheckForEarlyBoundEntities();
-            }));
 
             try
             {
@@ -482,6 +487,7 @@ Would you like to reinstall last stable release of connection controls?";
 
                 if (store.PluginsCount == 0)
                 {
+                    ccsb.SetMessage("Loading the list of available tools...");
                     await store.LoadTools(false);
                 }
 
@@ -517,6 +523,7 @@ Would you like to reinstall last stable release of connection controls?";
                 }
 
                 // Prepare Categories
+                ccsb.SetMessage("Preparing categories...");
                 PrepareCategories();
             }
             catch (Exception error)
@@ -531,6 +538,8 @@ Would you like to reinstall last stable release of connection controls?";
             if (ctrls.Any()) Controls.Remove(ctrls.First());
             var ctrls2 = Controls.OfType<ConnectingCdsControl>();
             if (ctrls2.Any()) Controls.Remove(ctrls2.First());
+
+            ccsb.SetMessage(string.Empty);
         }
 
         private void PrepareCategories()
@@ -1633,7 +1642,8 @@ Would you like to reinstall last stable release of connection controls?";
                 var currentVersion = Assembly.GetExecutingAssembly().GetName().Version;
                 try
                 {
-                    var request = WebRequest.CreateHttp("https://www.xrmtoolbox.com/_odata/releases");
+                    //var request = WebRequest.CreateHttp("https://www.xrmtoolbox.com/_odata/releases");
+                    var request = WebRequest.CreateHttp("https://www.xrmtoolbox.com/_api/mctools_releases");
                     var response = request.GetResponse();
                     Releases releases = null;
                     using (Stream dataStream = response.GetResponseStream())
@@ -1780,7 +1790,7 @@ Would you like to reinstall last stable release of connection controls?";
             var worker = new BackgroundWorker();
             worker.DoWork += (s, evt) =>
             {
-                var request = WebRequest.CreateHttp("https://www.xrmtoolbox.com/_odata/releases");
+                var request = WebRequest.CreateHttp("https://www.xrmtoolbox.com/_api/mctools_releases");
                 var response = request.GetResponse();
                 using (Stream dataStream = response.GetResponseStream())
                 {
@@ -1849,13 +1859,6 @@ Would you like to reinstall last stable release of connection controls?";
                     ItSecurityChecker isc = new ItSecurityChecker();
                     isc.LoadRepositories();
                     store = new ToolLibrary.ToolLibrary(Options.Instance, isc.Repositories);
-                    store.LoadTools().GetAwaiter().GetResult();
-                }
-
-                if (store.PluginsCount == 0 || store.Categories == null)
-                {
-                    MessageBox.Show(this, "Tool Library is not yet initialzed, please wait few seconds", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
                 }
 
                 libraryForm = new ToolLibraryForm((ToolLibrary.ToolLibrary)store, Options.Instance);
@@ -2221,6 +2224,7 @@ Would you like to reinstall last stable release of connection controls?";
             {
                 await LoadStore();
                 await store.LoadTools(false);
+                pnlNoToolLibraryAccess.Visible = false;
             }
             catch (Exception error)
             {

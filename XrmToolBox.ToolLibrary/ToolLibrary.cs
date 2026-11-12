@@ -55,6 +55,11 @@ namespace XrmToolBox.ToolLibrary
             {
                 if (!string.IsNullOrEmpty(settings.RepositoryUrl))
                 {
+                    if (settings.RepositoryUrl == "https://www.xrmtoolbox.com/_odata/plugins")
+                    {
+                        settings.RepositoryUrl = "https://www.xrmtoolbox.com/_api/mctools_plugins?$expand=mctools_ContactId($select=mctools_ismvp)";
+                    }
+
                     Repositories.Add("Default", settings.RepositoryUrl);
                 }
 
@@ -78,7 +83,7 @@ namespace XrmToolBox.ToolLibrary
 
             try
             {
-                WebRequestHelper.MakeGet("https://www.xrmtoolbox.com/_odata/categories");
+                WebRequestHelper.MakeGet("https://www.xrmtoolbox.com/_api/mctools_categories");
             }
             catch
             {
@@ -104,8 +109,8 @@ namespace XrmToolBox.ToolLibrary
         public int PluginsCount => XrmToolBoxPlugins?.Plugins.Count ?? 0;
         public int PluginsUpdatesCount => XrmToolBoxPlugins?.Plugins.Count(p => p.Action == PackageInstallAction.Update) ?? 0;
         public Dictionary<string, string> Repositories { get; private set; }
+        public IToolLibrarySettings ToolLibrarySettings => settings;
         public List<IXrmToolBoxLibraryTool> Tools => XrmToolBoxPlugins.Plugins.Select(p => (IXrmToolBoxLibraryTool)p).ToList();
-
         public XtbPlugins XrmToolBoxPlugins { get; set; }
 
         #endregion Properties
@@ -226,69 +231,88 @@ namespace XrmToolBox.ToolLibrary
             {
                 Directory.CreateDirectory(cachePackagePath);
 
-                Uri pathUri = new Uri(e.Plugin.DownloadUrl);
-                byte[] packageBytes;
-                if (pathUri.Scheme == "http" || pathUri.Scheme == "https")
+                try
                 {
-                    packageBytes = HttpClient.GetByteArrayAsync(e.DownloadUrl).GetAwaiter().GetResult();
-                }
-                else if (pathUri.Scheme == "file")
-                {
-                    packageBytes = File.ReadAllBytes(e.DownloadUrl);
-                }
-                else
-                {
-                    throw new Exception($"Unsupported file path scheme {pathUri.Scheme}");
-                }
-
-                using (var ms = new MemoryStream())
-                {
-                    ms.Write(packageBytes, 0, packageBytes.Length);
-                    var package = Package.Open(ms);
-
-                    bool found = false;
-
-                    foreach (var part in package.GetParts())
+                    Uri pathUri = new Uri(e.Plugin.DownloadUrl);
+                    byte[] packageBytes;
+                    if (pathUri.Scheme == "http" || pathUri.Scheme == "https")
                     {
-                        if (part.Uri.ToString().ToLower().IndexOf("/plugins/") < 0) continue;
+                        packageBytes = HttpClient.GetByteArrayAsync(e.DownloadUrl).GetAwaiter().GetResult();
+                    }
+                    else if (pathUri.Scheme == "file")
+                    {
+                        packageBytes = File.ReadAllBytes(e.DownloadUrl);
+                    }
+                    else
+                    {
+                        throw new Exception($"Unsupported file path scheme {pathUri.Scheme}");
+                    }
 
-                        found = true;
+                    using (var ms = new MemoryStream())
+                    {
+                        ms.Write(packageBytes, 0, packageBytes.Length);
+                        var package = Package.Open(ms);
 
-                        var fileName = part.Uri.ToString().Split(new string[] { "/Plugins/", "/plugins/" }, StringSplitOptions.RemoveEmptyEntries).Last();
-                        fullPath = Path.Combine(cachePackagePath, fileName);
-                        destinationFile = Path.Combine(Paths.PluginsPath, fileName);
+                        bool found = false;
 
-                        var directory = Path.GetDirectoryName(fullPath);
-                        if (!Directory.Exists(directory)) Directory.CreateDirectory(directory);
-
-                        using (var partStream = part.GetStream())
+                        foreach (var part in package.GetParts())
                         {
-                            using (var fileStream = File.Create(fullPath))
+                            if (part.Uri.ToString().ToLower().IndexOf("/plugins/") < 0) continue;
+
+                            found = true;
+
+                            var fileName = part.Uri.ToString().Split(new string[] { "/Plugins/", "/plugins/" }, StringSplitOptions.RemoveEmptyEntries).Last();
+                            fullPath = Path.Combine(cachePackagePath, fileName);
+                            destinationFile = Path.Combine(Paths.PluginsPath, fileName);
+
+                            var directory = Path.GetDirectoryName(fullPath);
+                            if (!Directory.Exists(directory)) Directory.CreateDirectory(directory);
+
+                            using (var partStream = part.GetStream())
                             {
-                                partStream.Seek(0, SeekOrigin.Begin);
-                                partStream.CopyTo(fileStream);
+                                using (var fileStream = File.Create(fullPath))
+                                {
+                                    partStream.Seek(0, SeekOrigin.Begin);
+                                    partStream.CopyTo(fileStream);
+                                }
+                            }
+
+                            // XrmToolBox restart is required when a plugin has to be
+                            // updated or when a new plugin shares files with other
+                            // plugin(s) already installed
+                            if (e.Plugin.RequiresXtbRestart || e.Plugin.Action == PackageInstallAction.Install)
+                            {
+                                pus.Plugins.Add(new PluginUpdate
+                                {
+                                    Name = e.Plugin.Name,
+                                    Source = fullPath,
+                                    Destination = destinationFile,
+                                    RequireRestart = e.Plugin.RequiresXtbRestart
+                                });
                             }
                         }
 
-                        // XrmToolBox restart is required when a plugin has to be
-                        // updated or when a new plugin shares files with other
-                        // plugin(s) already installed
-                        if (e.Plugin.RequiresXtbRestart || e.Plugin.Action == PackageInstallAction.Install)
+                        if (!found)
                         {
-                            pus.Plugins.Add(new PluginUpdate
-                            {
-                                Name = e.Plugin.Name,
-                                Source = fullPath,
-                                Destination = destinationFile,
-                                RequireRestart = e.Plugin.RequiresXtbRestart
-                            });
+                            throw new Exception("No plugin files found in package");
                         }
                     }
-
-                    if (!found)
+                }
+                catch
+                {
+                    // Clean up partially extracted package folder on failure
+                    if (Directory.Exists(cachePackagePath))
                     {
-                        throw new Exception("No plugin files found in package");
+                        try
+                        {
+                            Directory.Delete(cachePackagePath, true);
+                        }
+                        catch
+                        {
+                            // Best effort cleanup - ignore errors during cleanup
+                        }
                     }
+                    throw;
                 }
             }
             else
@@ -299,7 +323,7 @@ namespace XrmToolBox.ToolLibrary
 
         public async Task<PackageVersion> GetPackageVersion(string packageName)
         {
-            var response = await HttpClient.GetAsync($"https://api-v2v3search-0.nuget.org/query?q={packageName}").ConfigureAwait(false);
+            var response = await HttpClient.GetAsync($"{settings.NugetSourceUrl}/query?q={packageName}").ConfigureAwait(false);
             var data = await response.Content.ReadAsStringAsync();
 
             var jo = JObject.Parse(data);
@@ -428,6 +452,21 @@ namespace XrmToolBox.ToolLibrary
             {
                 string url = Repositories[repository];
                 bool isCustomRepo = !url.StartsWith("https://www.xrmtoolbox.com/") && !url.StartsWith("https://xrmtoolboxdev.microsoftcrmportals.com/");
+
+                if (url == "https://www.xrmtoolbox.com/_odata/plugins")
+                {
+                    url = "https://www.xrmtoolbox.com/_api/mctools_plugins";
+                }
+
+                if (!url.EndsWith("?$expand=mctools_ContactId($select=mctools_ismvp)"))
+                {
+                    url += "?$expand=mctools_ContactId($select=mctools_ismvp)";
+                }
+
+                if (url.IndexOf("statuscode") < 0)
+                {
+                    url += $"{(url.IndexOf("?") > 0 ? "&" : "?")}$filter=statuscode eq 180000000";
+                }
 
                 Uri pathUri = new Uri(url);
 
@@ -748,7 +787,7 @@ namespace XrmToolBox.ToolLibrary
                             new DataContractJsonSerializerSettings
                             {
                                 UseSimpleDictionaryFormat = true,
-                                DateTimeFormat = new DateTimeFormat("yyyy-MM-dd'T'HH:mm:ss", new DateTimeFormatInfo { FullDateTimePattern = "yyyy-MM-dd'T'HH:mm:ss" })
+                                DateTimeFormat = new DateTimeFormat("yyyy-MM-dd'T'HH:mm:ssZ", new DateTimeFormatInfo { FullDateTimePattern = "yyyy-MM-dd'T'HH:mm:ss" })
                             });
 
                         return (T)serializer.ReadObject(dataStream);

@@ -153,7 +153,7 @@ namespace XrmToolBox.ToolLibrary.Forms
                 shift += listItemPadding + iconSize;
             }
 
-            if (!plugin.IsFromCustomRepo && (plugin.IsMvp ?? false))
+            if (!plugin.IsFromCustomRepo && (plugin.Contact?.IsMvp ?? false))
             {
                 e.Graphics.DrawImage(mvpImage, rec.X + shift + listItemPadding, rec.Y, iconSize, iconSize);
                 shift += listItemPadding + iconSize;

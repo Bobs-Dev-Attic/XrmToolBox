@@ -16,6 +16,13 @@ namespace XrmToolBox.ToolLibrary.AppCode
     }
 
     [DataContract]
+    public class XtbContact
+    {
+        [DataMember(Name = "mctools_ismvp")]
+        public bool? IsMvp { get; set; }
+    }
+
+    [DataContract]
     public class XtbPlugin : IXrmToolBoxLibraryTool
     {
         #region Properties
@@ -42,6 +49,10 @@ namespace XrmToolBox.ToolLibrary.AppCode
         }
 
         public CompatibleState Compatibilty { get; internal set; }
+
+        [DataMember(Name = "mctools_ContactId")]
+        public XtbContact Contact { get; set; }
+
         public Version CurrentVersion { get; internal set; }
 
         [DataMember(Name = "mctools_description")]
@@ -49,9 +60,6 @@ namespace XrmToolBox.ToolLibrary.AppCode
 
         [DataMember(Name = "mctools_downloadurl")]
         public string DownloadUrl { get; set; }
-
-        [DataMember(Name = "entity-permissions-enabled")]
-        public object EntityPermissionsEnabled { get; set; }
 
         public List<string> Files
         {
@@ -69,9 +77,6 @@ namespace XrmToolBox.ToolLibrary.AppCode
 
         public bool IsFromCustomRepo { get; set; }
 
-        [DataMember(Name = "contact-mctools_ismvp")]
-        public bool? IsMvp { get; set; }
-
         [DataMember(Name = "mctools_isopensource")]
         public bool? IsOpenSource { get; set; }
 
@@ -86,9 +91,6 @@ namespace XrmToolBox.ToolLibrary.AppCode
 
         [DataMember(Name = "mctools_licenseurl")]
         public string LicenseUrl { get; internal set; }
-
-        [DataMember(Name = "list-id")]
-        public string ListId { get; set; }
 
         public Image Logo { get; set; }
 
@@ -124,9 +126,6 @@ namespace XrmToolBox.ToolLibrary.AppCode
         public string Version { get; set; }
 
         public List<XtbPluginVersion> Versions { get; internal set; }
-
-        [DataMember(Name = "view-id")]
-        public string ViewId { get; set; }
 
         #endregion Properties
 
